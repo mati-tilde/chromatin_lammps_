@@ -1,0 +1,14 @@
+Track: H3K27me3
+Chromosome: X
+========================================
+Chromosome attributes:
+Chromosome length: 23542271 bp
+Number of beads: 2355
+Resolution: 9996.71804670913 bp/beads
+
+
+Statistical analysis:
+Mean:  16.667
+Std. deviation:  33.517
+Maximum:  371.029
+Minimum:  0.000

@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+
+# Generated LAMMPS files
+*.data
+*.lammpstrj
+log.lammps
+
+# Generated reports
+reports/
+writer_test.data
+genome.data
+
+# Temporary test input
+test.in

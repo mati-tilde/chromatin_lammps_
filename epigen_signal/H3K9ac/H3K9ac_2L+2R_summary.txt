@@ -1,0 +1,14 @@
+Track: H3K9ac
+Chromosomes(s): 2L+2R
+========================================
+Chromosome attributes:
+Chromosome length: 48800648 bp
+Number of beads: 4881
+Resolution: 9998.083999180495 bp/beads
+
+
+Statistical analysis:
+Mean:  12.626
+Std. deviation:  11.262
+Maximum:  306.162
+Minimum:  0.120

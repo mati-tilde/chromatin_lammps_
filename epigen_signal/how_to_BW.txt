@@ -1,0 +1,24 @@
+HOW TO use and understand BigWig files: 
+
+1) OPEN THE FILE AND CONSIDER THE HEADER.
+#import pyBigWig
+
+bw = pyBigWig.open("name.pooled.bw")
+
+print("Header:")		#prints the header of the .bw file 
+print(bw.header())		
+
+print("\nChromosomes:")		#prints the chromosomes in the file 
+print(bw.chroms('211000022278031'))
+
+#bw.close()
+
+you can also use bw.chroms('num'), to look for only one specific chromosomes; in the file, the first number is the ID of the chromosome. 
+
+a typical header: 
+version (typically 4)
+zoom levels (5 here) --> zoom levels are precomputed summaries at different resolutions (different amount of bp)
+nBaseCovered (143774504) --> number of genomic bases that have an associated data value in the file (not all the bases of the chromosome, only those that have a signal that bigwig stored) 
+min/mavVal --> minimal and maximal signal values stored in the file (what the signal is depends on the file) 
+sumData --> sum of all values (sum of all signal values -- mean) 
+sumSquared --> sum of all squared data (useful for statistical reasons -- standard dev)
