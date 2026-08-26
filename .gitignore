@@ -1,16 +1,26 @@
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
+venv/
+.venv/
 
-# Generated LAMMPS files
-*.data
+# LAMMPS generated files
 *.lammpstrj
+*.data
+*.restart
+*.rst
 log.lammps
+simulation_log.txt
+old_tmp_rst
+new_tmp_rst
 
-# Generated reports
-reports/
-writer_test.data
-genome.data
+# Generated figures
+*.png
+!chromatin_model/helix_reports/**/*.png
+!chromatin_model/rw_reports/**/*.png
 
-# Temporary test input
-test.in
+# Large experimental data
+*.bw
+
+# Temporary files
+*.tmp

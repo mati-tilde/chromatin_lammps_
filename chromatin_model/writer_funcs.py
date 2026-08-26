@@ -1,4 +1,5 @@
 import numpy as np
+from genome_constants import NUCLEAR_HEIGHT, NUCLEAR_RADIUS
 
 #########################################################
 #
@@ -30,6 +31,18 @@ def write_header(genome, n_atom_types, n_bond_types, margin = 2.0):
     all_coords = np.vstack(list(genome.values()))
 
     # computing box limitations (adapts to all type of geometry at once):
+    xmin = - NUCLEAR_RADIUS - margin
+    xmax = NUCLEAR_RADIUS + margin
+
+    ymin = - NUCLEAR_RADIUS - margin
+    ymax = NUCLEAR_RADIUS + margin
+
+    zmin = - margin
+    zmax = NUCLEAR_HEIGHT + margin
+
+
+    '''
+    # computing box limitations (adapts to all type of geometry at once):
     xmin = np.min(all_coords[:, 0]) - margin
     xmax = np.max(all_coords[:, 0]) + margin
 
@@ -38,6 +51,8 @@ def write_header(genome, n_atom_types, n_bond_types, margin = 2.0):
 
     zmin = np.min(all_coords[:, 2]) - margin
     zmax = np.max(all_coords[:, 2]) + margin
+    '''
+
 
     # header writing:
     header = []

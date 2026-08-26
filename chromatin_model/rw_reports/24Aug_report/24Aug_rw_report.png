@@ -1,0 +1,221 @@
+======================================================================
+GENOME BUILDER VALIDATION REPORT
+======================================================================
+Date : 24/08/2026 20:01:15
+
+Geometry parameters
+Method : random_walk
+Step size : 1.0
+Seed      : 42
+
+Boundary
+Cylinder radius : 8
+Cylinder height : 68
+
+Genome layout
+======================================================================
+
+----------------------------------------------------------------------
+1. Genome parsing
+----------------------------------------------------------------------
+Experimental bins : 11377
+Final beads       : 13256
+
+Chromosome arms
+chr2L  2352 beads (expected  2352) PASS
+chr2R  2529 beads (expected  2529) PASS
+chr3L  2812 beads (expected  2812) PASS
+chr3R  3208 beads (expected  3208) PASS
+chrX   2355 beads (expected  2355) PASS
+
+Total beads : 13256
+Genome parsing : PASS
+
+----------------------------------------------------------------------
+2. Chromosome construction
+----------------------------------------------------------------------
+chr2 :  4881 beads (expected  4881) PASS
+chr3 :  6020 beads (expected  6020) PASS
+chrX :  2355 beads (expected  2355) PASS
+
+----------------------------------------------------------------------
+3. Bond statistics
+----------------------------------------------------------------------
+chr2
+    minimum : 1.000000
+    maximum : 1.000000
+    mean    : 1.000000
+
+chr3
+    minimum : 1.000000
+    maximum : 1.000000
+    mean    : 1.000000
+
+chrX
+    minimum : 1.000000
+    maximum : 1.000000
+    mean    : 1.000000
+
+
+----------------------------------------------------------------------
+4. Arm junctions
+----------------------------------------------------------------------
+chr2: 1.000000
+chr3: 1.000000
+
+----------------------------------------------------------------------
+5. Geometry extension
+----------------------------------------------------------------------
+chr2
+    max radius : 7.998334
+    min z      : 0.004853
+    max z      : 55.004256
+    inside cylinder : True
+
+chr3
+    max radius : 7.999945
+    min z      : 0.000726
+    max z      : 67.973208
+    inside cylinder : True
+
+chrX
+    max radius : 7.993579
+    min z      : 0.028459
+    max z      : 67.939686
+    inside cylinder : True
+
+
+----------------------------------------------------------------------
+6. Global nuclear confinement
+----------------------------------------------------------------------
+Nuclear radius : 26.0
+Nuclear height : 68.0
+Maximum genome radius : 25.997369
+Minimum z            : 0.000726
+Maximum z            : 67.998241
+Genome inside nucleus : PASS
+
+----------------------------------------------------------------------
+7. Inter-chromosome separation
+----------------------------------------------------------------------
+chr2A - chr2B
+    minimum distance : 20.112029
+    closest beads    : 4807 - 614
+    separation       : PASS
+
+chr2A - chr3A
+    minimum distance : 2.491320
+    closest beads    : 440 - 5893
+    separation       : PASS
+
+chr2A - chr3B
+    minimum distance : 15.249548
+    closest beads    : 4741 - 4685
+    separation       : PASS
+
+chr2A - chrXA
+    minimum distance : 15.691419
+    closest beads    : 179 - 147
+    separation       : PASS
+
+chr2A - chrXB
+    minimum distance : 2.237489
+    closest beads    : 4198 - 194
+    separation       : PASS
+
+chr2B - chr3A
+    minimum distance : 15.541325
+    closest beads    : 2557 - 542
+    separation       : PASS
+
+chr2B - chr3B
+    minimum distance : 2.298304
+    closest beads    : 2880 - 3430
+    separation       : PASS
+
+chr2B - chrXA
+    minimum distance : 3.265021
+    closest beads    : 3649 - 1038
+    separation       : PASS
+
+chr2B - chrXB
+    minimum distance : 15.334656
+    closest beads    : 1762 - 1906
+    separation       : PASS
+
+chr3A - chr3B
+    minimum distance : 20.487391
+    closest beads    : 895 - 1310
+    separation       : PASS
+
+chr3A - chrXA
+    minimum distance : 2.427610
+    closest beads    : 1149 - 152
+    separation       : PASS
+
+chr3A - chrXB
+    minimum distance : 15.614908
+    closest beads    : 902 - 200
+    separation       : PASS
+
+chr3B - chrXA
+    minimum distance : 16.010624
+    closest beads    : 4827 - 1554
+    separation       : PASS
+
+chr3B - chrXB
+    minimum distance : 2.758711
+    closest beads    : 4925 - 1199
+    separation       : PASS
+
+chrXA - chrXB
+    minimum distance : 20.360612
+    closest beads    : 1622 - 876
+    separation       : PASS
+
+
+Global closest inter-chromosome pair
+    chromosomes : chr2A - chrXB
+    beads       : 4198 - 194
+    distance    : 2.237489
+
+----------------------------------------------------------------------
+6. Diploid genome
+----------------------------------------------------------------------
+chr2
+    identical coordinates : False
+    independent arrays    : True
+
+chr3
+    identical coordinates : False
+    independent arrays    : True
+
+chrX
+    identical coordinates : False
+    independent arrays    : True
+
+
+----------------------------------------------------------------------
+7. Chromosome centres
+----------------------------------------------------------------------
+chr2A: (  17.785,   -0.608,   23.331)
+chr2B: ( -17.244,   -0.545,   29.911)
+chr3A: (   9.669,   16.026,   26.150)
+chr3B: (  -9.801,  -15.639,   31.078)
+chrXA: (  -8.888,   16.832,   31.599)
+chrXB: (   9.285,  -15.004,   50.236)
+
+----------------------------------------------------------------------
+8. Figures
+----------------------------------------------------------------------
+Haploid genome : genome_3chroms.png
+Diploid genome : genome_6chroms.png
+======================================================================
+
+Validation completed successfully.
+
+Genome parser ........ PASS
+Chromosome builder ... PASS
+Genome builder ....... PASS
+
+======================================================================

@@ -1,0 +1,47 @@
+# Initialization.
+units		lj
+boundary	f f f 
+atom_style	bond
+log		simulation_log.txt
+read_data	helix_genome.data
+variable	seed equal 42
+
+# Potential information.
+neighbor	0.2 bin
+neigh_modify	delay 0 every 1 check yes		# check out precise meaning.
+
+bond_style	harmonic
+bond_coeff	1 40.0 1.0			# k = 40.0, r0 = 1.0 : consistent with step size = 1 for random walk
+
+pair_style	lj/cut 2.5
+
+# Confinement.
+region		Cyl cylinder z 0 0 28 -1 69 side in
+fix		nucleus all wall/region Cyl lj126 0.15 1.0 2.5
+
+pair_coeff	1 1  0.415  1.0      2.5
+
+# Minimization.
+thermo		10000
+thermo_style	custom step temp press pe lx ly lz pxx pyy pzz
+thermo_modify   flush yes
+
+min_style	cg
+minimize	0 1.0e-9 30000 300000  
+
+# --------------------------------------------------------------
+# Run.
+# --------------------------------------------------------------
+velocity	all create 1.0 ${seed} rot yes dist gaussian
+timestep	0.01
+
+fix		1 all nvt temp 1.0 1.0 0.1
+
+restart		10000 old_tmp_rst new_tmp_rst
+thermo		10000
+thermo_style    custom step temp pe etotal evdwl 
+
+
+#dump command
+dump		sim all custom 100 traj.lammpstrj id type x y z
+run		10000

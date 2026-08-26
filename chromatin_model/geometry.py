@@ -62,7 +62,7 @@ def generate_coords(method: str, boundary: str | None = None, boundary_kwargs: d
 # 	phase: initial angular offset.
 # return output: "coords" --> np.ndarray, as an array of shape (n_beads,3), giving [x,y,z] for each bead.
 
-def generate_helix(n_beads: int, radius: float, height: float, turns: float, start = None, phase: float = 0.0, reverse: bool = False):
+def generate_helix(n_beads: int, radius: float, height: float, turns: float, start = None, phase: float = 0.0, reverse: bool = False, drift: float = 0.0):
 
     # sanity check:
     if n_beads < 2:
@@ -71,7 +71,7 @@ def generate_helix(n_beads: int, radius: float, height: float, turns: float, sta
     # defining variables:
     s = np.linspace(0.0, 1.0, n_beads)
 
-    theta = phase + 2 * np.pi * turns * s
+    theta = 2 * np.pi * turns * s
 
     # introducing a starting point for each bead:
     if start is None:
@@ -83,8 +83,8 @@ def generate_helix(n_beads: int, radius: float, height: float, turns: float, sta
             raise ValueError("Start must be a 3-element coordinate.")
 
     # coordinates:
-    x = start[0] - radius * np.cos(theta[-2]) + radius * np.cos(theta)
-    y = start[1] - radius * np.sin(theta[-2]) + radius * np.sin(theta)
+    x = start[0] - radius * np.cos(theta[-2]) + radius * np.cos(theta) + s * drift
+    y = start[1] - radius * np.sin(theta[-2]) + radius * np.sin(theta) + s * drift
 
     if reverse:
         z = height * (1.0 - s)
@@ -111,53 +111,99 @@ def generate_helix(n_beads: int, radius: float, height: float, turns: float, sta
 # 	n_beads: number of beads to use in the simulation;
 # 	step_length: length of the random walk step;
 # 	start: point where the helix starts (necessary for initial coordinates);
-# 	seed: random seed for reproducibility.
+# 	avoid_coords: contains coords of previous arm to check self avoidance with;
+# 	rng: random generator for reproducibility;
+# 	reverse: possibility to build the arm lopsided;
+# 	boundary: imposing boundary on building the random walk;
 # return output: "coords" --> np.ndarray, as an array of shape (n_beads,3), giving [x,y,z] for each bead.
 
+def generate_random_walk(n_beads: int, step_size: float, start = None, avoid_coords = None, rng = None, reverse: bool = False, boundary = None, **boundary_kwargs):
 
-def generate_random_walk(n_beads: int, step_size: float, start = None, seed: int | None = None, reverse: bool = False, boundary = None, **boundary_kwargs):
-
+    #------------------------------------------------------------------
     # sanity check:
+    #------------------------------------------------------------------
+
     if n_beads < 2:
-        raise ValueError(f"Number of beads has to be at least 2 (first and last)! {n_beads} is invalid.")
+        raise ValueError("Number of beads has to be at least 2 (first and last)!")
 
     if step_size <= 0:
-        raise ValueError(f"Step length must be a positive value. {step_size} is invalid.")
+        raise ValueError("Step length must be a positive value.")
 
-    # introducing a starting point for each bead:
+    # random generator:
+    if rng is None:
+        rng = np.random.default_rng()
+
+    # starting point:
     if start is None:
         start = np.array([0.0, 0.0, 0.0])
+
     else:
         start = np.asarray(start)
 
         if start.shape != (3,):
             raise ValueError("Start must be a 3-element coordinate.")
 
-    # check for the start to be inside the boundary:
+    # check starting point against boundary:
     if not check_constraint(boundary, start, **boundary_kwargs):
         raise ValueError("The starting point does not satisfy the selected boundary.")
 
-    # random generator:
-    random_gen = np.random.default_rng(seed)
+    #------------------------------------------------------------------
+    # allocate coordinates:
+    #------------------------------------------------------------------
 
-    # allocating coordinates and imposing first bead:
-    coords = np.zeros((n_beads + 1,3))
+    # extra first point is used as the continuation point:
+    coords = np.zeros((n_beads + 1, 3))
 
     coords[0] = start
 
-    # generating the chain:
-    for i in range(1,n_beads + 1):
+    #------------------------------------------------------------------
+    # previous coordinates to avoid:
+    #------------------------------------------------------------------
+
+    if avoid_coords is not None:
+
+        avoid_coords = np.asarray(avoid_coords)
+
+        if avoid_coords.ndim != 2 or avoid_coords.shape[1] != 3:
+            raise ValueError("avoid_coords must be an array of shape (N,3).")
+
+    #------------------------------------------------------------------
+    # parameters for self-avoidance and backtracking:
+    #------------------------------------------------------------------
+
+    min_dist = 0.7
+    max_attempts = 10000
+    max_backtracks = 100
+
+    backtracks = 0
+
+    #------------------------------------------------------------------
+    # generate chain:
+    #------------------------------------------------------------------
+
+    i = 1
+
+    while i < n_beads + 1:
 
         accepted = False
-        max_attempts = 10000
         attempts = 0
 
-        while not accepted:
-            # generating a random direction:
-            direction = random_gen.normal(size = 3)
+        #--------------------------------------------------------------
+        # try to generate bead i:
+        #--------------------------------------------------------------
 
-            # normalizing direction to get random unit vector (see *2 below) and sign for reverse:
+        while not accepted and attempts < max_attempts:
+
+            attempts += 1
+
+            #----------------------------------------------------------
+            # random direction:
+            #----------------------------------------------------------
+
+            direction = rng.normal(size=3)
+
             norm = np.linalg.norm(direction)
+
             if norm == 0:
                 continue
 
@@ -165,23 +211,108 @@ def generate_random_walk(n_beads: int, step_size: float, start = None, seed: int
 
             direction_sign = -1 if reverse else 1
 
-            # counting number of attempts to avoid infinite loops:
-            attempts += 1
+            # candidate point:
+            new_point = (coords[i - 1] + direction_sign * step_size * direction)
 
-            # candidate point from random walk definition:
-            new_point = (coords[i-1] + direction_sign * step_size * direction)
-
+            #----------------------------------------------------------
             # boundary check:
-            accepted = check_constraint(boundary, new_point, **boundary_kwargs)
+            #----------------------------------------------------------
 
-            if attempts >= max_attempts:
-                raise RuntimeError("Unable to generate a point inside the requested boundary.")
+            accepted_boundary = check_constraint(boundary, new_point, **boundary_kwargs)
 
-        # store only accepted points:
+            if not accepted_boundary:
+                continue
+
+            #----------------------------------------------------------
+            # self-avoidance check:
+            #----------------------------------------------------------
+
+            # previous beads in the current arm.
+            # the directly bonded previous bead coords[i-1] is excluded automatically.
+
+            previous_points = coords[:i - 1]
+
+            # points from a previously generated arm.
+
+            # NOTE:
+            # the last point of avoid_coords is the arm-junction bead, which is bonded to the first bead of this arm, so it must NOT be subject to the minimum-distance rule.
+
+            if avoid_coords is not None:
+                avoid_points = avoid_coords[:-1]
+            else:
+                avoid_points = np.empty((0, 3))
+
+            # combine all points that the new point must avoid:
+            if len(avoid_points) == 0:
+
+                points_to_avoid = previous_points
+
+            elif len(previous_points) == 0:
+
+                points_to_avoid = avoid_points
+
+            else:
+
+                points_to_avoid = np.vstack((avoid_points, previous_points))
+
+            # check distances:
+            if len(points_to_avoid) == 0:
+
+                accepted_dist = True
+
+            else:
+
+                squared_distances = np.sum((points_to_avoid - new_point) ** 2, axis = 1)
+
+                accepted_dist = np.all(squared_distances >= min_dist ** 2)
+
+                if not accepted_dist:
+                    continue
+
+            # if we reached this point, the candidate is valid:
+            accepted = True
+
+        #--------------------------------------------------------------
+        # no valid candidate found :/
+        #--------------------------------------------------------------
+
+        if not accepted:
+
+            # cannot backtrack beyond the initial point:
+            if i <= 1:
+                raise RuntimeError("Unable to generate a self-avoiding random walk.")
+
+            backtracks += 1
+
+            if backtracks > max_backtracks:
+                raise RuntimeError("Unable to generate a self-avoiding random walk after repeated backtracking.")
+
+            # move back one bead:
+            i -= 1
+
+            # remove the abandoned part of the chain:
+            coords[i + 1:] = np.nan
+
+            # try generating this bead again:
+            continue
+
+        #--------------------------------------------------------------
+        # store accepted point:
+        #--------------------------------------------------------------
+
         coords[i] = new_point
 
+        # restore backtracks:
+        backtracks = 0
 
-    # output (discrading the first point - that is a continuation point, not to be returned):
+        # move to next bead:
+        i += 1
+
+    #------------------------------------------------------------------
+    # output:
+    #------------------------------------------------------------------
+
+    # discard the artificial continuation point:
     return coords[1:]
 
 #**********************************************************************************************************
@@ -195,7 +326,7 @@ def generate_random_walk(n_beads: int, step_size: float, start = None, seed: int
 #       seed: random seed for reproducibility.
 # return output: "coords" --> np.ndarray, as an array of shape (n_beads,3), giving [x,y,z] for each bead.
 
-def generate_persistent_walk(n_beads: int, step_size: float, persistence: float, start = None, seed: int | None = None, reverse: bool = False, boundary = None, **boundary_kwargs):
+def generate_persistent_walk(n_beads: int, step_size: float, persistence: float, start = None, rng = None, reverse: bool = False, boundary = None, **boundary_kwargs):
 
     if n_beads < 2:
         raise ValueError(f"Number of beads has to be at least 2 (first and last)! {n_beads} is invalid.")
@@ -206,6 +337,9 @@ def generate_persistent_walk(n_beads: int, step_size: float, persistence: float,
     if not 0 <= persistence <= 1:
         raise ValueError(f"Persistence must be in [0,1]. {persistence} is invalid")
 
+    # introducing a random number generator for seed:
+    if rng is None:
+        rng = np.random.default_rng()
 
     # introducing a starting point for each bead:
     if start is None:
@@ -220,16 +354,13 @@ def generate_persistent_walk(n_beads: int, step_size: float, persistence: float,
     if not check_constraint(boundary, start, **boundary_kwargs):
         raise ValueError("The starting point does not satisfy the selected boundary.")
 
-    # random generator:
-    random_gen = np.random.default_rng(seed)
-
     # allocating coordinates and imposing first bead:
     coords = np.zeros((n_beads + 1,3))
 
     coords[0] = start
 
     # initial random direction:
-    direction = random_gen.normal(size = 3)
+    direction = rng.normal(size = 3)
 
     norm = np.linalg.norm(direction)
 
@@ -246,7 +377,7 @@ def generate_persistent_walk(n_beads: int, step_size: float, persistence: float,
 
         while not accepted:
             # generating a random perturbation:
-            random_direction = random_gen.normal(size = 3)
+            random_direction = rng.normal(size = 3)
 
             # normalizing direction to get random unit vector (see *2 below):
             r_norm = np.linalg.norm(random_direction)

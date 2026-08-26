@@ -83,19 +83,33 @@ EXCLUDED_CHROMOSOMES = {
 
 #-------------------------------------------------
 # Initial layout of the diploid genome.
-
+'''
 X_SPACING = 40.0
 Y_SPACING = 40.0
+'''
 
+# for the random walk:
+INITIAL_LAYOUT_RW = {
+
+    "chr2A": np.array([ 18.0,   0.0,   0.0]),
+    "chr3A": np.array([  9.0,  15.588, 0.0]),
+    "chrXA": np.array([ -9.0,  15.588, 0.0]),
+
+    "chr2B": np.array([-18.0,   0.0,   0.0]),
+    "chr3B": np.array([ -9.0, -15.588, 0.0]),
+    "chrXB": np.array([  9.0, -15.588, 0.0]),
+}
+
+#for the helix:
 INITIAL_LAYOUT = {
 
-    "chr2A": np.array([0 * X_SPACING, 1 * Y_SPACING, 0.0]),
-    "chr3A": np.array([1 * X_SPACING, 1 * Y_SPACING, 0.0]),
-    "chrXA": np.array([2 * X_SPACING, 1 * Y_SPACING, 0.0]),
+    "chr2A": np.array([-3.0,  3.0, 0.0]),
+    "chr3A": np.array([ 3.0,  3.0, 0.0]),
+    "chrXA": np.array([ 0.0,  3.0, 0.0]),
 
-    "chr2B": np.array([0 * X_SPACING, 0 * Y_SPACING, 0.0]),
-    "chr3B": np.array([1 * X_SPACING, 0 * Y_SPACING, 0.0]),
-    "chrXB": np.array([2 * X_SPACING, 0 * Y_SPACING, 0.0]),
+    "chr2B": np.array([-3.0, -3.0, 0.0]),
+    "chr3B": np.array([ 3.0, -3.0, 0.0]),
+    "chrXB": np.array([ 0.0, -3.0, 0.0]),
 }
 #-------------------------------------------------
 
@@ -110,4 +124,10 @@ MOLECULE_IDS = {
     "chrXA": 5,
     "chrXB": 6,
 }
+#-------------------------------------------------
+
+
+#-------------------------------------------------
+NUCLEAR_RADIUS = 28.0
+NUCLEAR_HEIGHT = 68.0
 #-------------------------------------------------
