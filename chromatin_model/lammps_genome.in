@@ -3,7 +3,7 @@ units		lj
 boundary	f f f 
 atom_style	bond
 log		simulation_log.txt
-read_data	helix_genome.data
+read_data	rw_genome.data
 variable	seed equal 42
 
 # Potential information.
@@ -43,5 +43,5 @@ thermo_style    custom step temp pe etotal evdwl
 
 
 #dump command
-dump		sim all custom 100 traj.lammpstrj id type x y z
+dump		sim all custom 100 rw_traj.lammpstrj id type x y z
 run		10000

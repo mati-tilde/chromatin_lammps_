@@ -13,7 +13,7 @@ import numpy as np
 # import choices:
 BED_FILE = "comp_HiTC_10000_WT_ST10_refined_with_chromwide.bed"
 
-GEOMETRY = "helix"
+GEOMETRY = "random_walk"
 
 # for helix:
 HELIX_RADIUS = 5.0
@@ -61,5 +61,5 @@ elif GEOMETRY == "helix":
 #------------------------------------------------------
 # Writing .data file.
 #------------------------------------------------------
-write_data(filename = "helix_genome.data", genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES)
+write_data(filename = "rw_genome.data", genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES)
 

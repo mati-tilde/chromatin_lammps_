@@ -7,6 +7,8 @@ venv/
 # LAMMPS generated files
 *.lammpstrj
 *.data
+!chromatin_model/helix_genome.data
+!chromatin_model/rw_genome.data
 *.restart
 *.rst
 log.lammps
