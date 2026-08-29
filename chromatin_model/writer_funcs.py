@@ -11,8 +11,8 @@ from genome_constants import NUCLEAR_HEIGHT, NUCLEAR_RADIUS
 #--------------------------------------------------------------------------
 # Writing the header for the file.
 # input: 1) genome: genome dictionary built before;
-#  	 2) n_atom_types: number of atom types;
-#  	 3) n_bond_types: number of bond types;
+#  	     2) n_atom_types: number of atom types;
+#  	     3) n_bond_types: number of bond types;
 #   	 4) margin: to construct length of the box from coordinates.
 
 def write_header(genome, n_atom_types, n_bond_types, margin = 2.0):
@@ -39,20 +39,6 @@ def write_header(genome, n_atom_types, n_bond_types, margin = 2.0):
 
     zmin = - margin
     zmax = NUCLEAR_HEIGHT + margin
-
-
-    '''
-    # computing box limitations (adapts to all type of geometry at once):
-    xmin = np.min(all_coords[:, 0]) - margin
-    xmax = np.max(all_coords[:, 0]) + margin
-
-    ymin = np.min(all_coords[:, 1]) - margin
-    ymax = np.max(all_coords[:, 1]) + margin
-
-    zmin = np.min(all_coords[:, 2]) - margin
-    zmax = np.max(all_coords[:, 2]) + margin
-    '''
-
 
     # header writing:
     header = []
@@ -127,20 +113,21 @@ def get_beads_for_chrom(beads, chromosome):
         if bead.chromosome == chromosome:
             chromosome_beads.append(bead)
 
-
     return chromosome_beads
 #--------------------------------------------------------------------------
 
 
 
 
-#--------------------------------------------------------------------------
-#  Writing atoms section in lammps file.
 def write_atoms(genome, beads):
 
-    # NOTE:
-    # setting it to 1 cause it doesn't bring relevant information now.
-    atom_type = 1
+    bead_type = 1
+    for_freeze = 2
+    frozen_beads = 0
+
+    frozen_ids = []
+
+    atom_type = []
 
     atoms = []
 
@@ -153,7 +140,7 @@ def write_atoms(genome, beads):
     # looping over the genome:
     for chromosome, coords in genome.items():
 
-        # recover the original chromosome name:
+        # recover the original chromosome name and arm name:
         base_chrom = chromosome[:-1]
 
         # retrieve the corresponding beads:
@@ -166,9 +153,27 @@ def write_atoms(genome, beads):
         #-----------------------------------------------------------------------------------------------
 
         # looping over beads and coordinates simultaneously:
-        for bead, coord in zip(chrom_beads, coords):
+        for bead_index, (bead, coord) in enumerate(zip(chrom_beads, coords)):
 
             x, y, z = coord
+
+            if bead_index == 0 or bead_index == len(chrom_beads) - 1:
+                atom_type = for_freeze
+                frozen_beads += 1
+                frozen_ids.append(bead_index)
+
+            elif bead.arm != chrom_beads[bead_index - 1].arm:
+                atom_type = for_freeze
+                frozen_beads += 1
+                frozen_ids.append(bead_index)
+
+            elif bead.arm != chrom_beads[bead_index + 1].arm:
+                atom_type = for_freeze
+                frozen_beads += 1
+                frozen_ids.append(bead_index)
+
+            else:
+                atom_type = bead_type
 
             atoms.append(
                 f"{atom_id} "
@@ -185,10 +190,13 @@ def write_atoms(genome, beads):
 
     atoms.append("")
 
+    #--------------------------------------------------------
+    # sanity check:
+    print(f"Number of frozen atoms: {frozen_beads}.")
+    print(f"Frozen atom indices: {frozen_ids}.")
+    #--------------------------------------------------------
+
     return atoms
-#--------------------------------------------------------------------------
-
-
 
 
 #--------------------------------------------------------------------------

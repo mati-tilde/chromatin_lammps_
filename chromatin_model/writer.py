@@ -24,13 +24,13 @@ HELIX_TURNS = 50
 STEP_SIZE = 1.0
 SEED = 42
 
-# cylinder boundary:
+# cylinder boundary (for random walk only):
 CYLINDER_RADIUS = 8.0
 CYLINDER_HEIGHT = 68.0
 
 
-# types:
-N_ATOM_TYPES = 1
+# types (for lammps):
+N_ATOM_TYPES = 2
 N_BOND_TYPES = 1
 
 #------------------------------------------------------
@@ -61,5 +61,8 @@ elif GEOMETRY == "helix":
 #------------------------------------------------------
 # Writing .data file.
 #------------------------------------------------------
-write_data(filename = "rw_genome.data", genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES)
+if GEOMETRY == "random_walk":
+    write_data(filename = "rw_genome.data", genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES)
+elif GEOMETRY == "helix":
+    write_data(filename = "helix_genome.data", genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES)
 
