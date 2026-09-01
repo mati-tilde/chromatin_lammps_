@@ -1,8 +1,10 @@
 from genome_parser import read_bed
 from builder import split_by_arms, build_chroms, build_genome
-from writer_funcs import write_data
+from writer_funcs import write_data, write_signal
+from signal_annotator import annotate_genome
+from epigenetic_track import EpigeneticTrack
 
-from genome_constants import NUCLEAR_HEIGHT, NUCLEAR_RADIUS
+from genome_constants import NUCLEAR_HEIGHT, NUCLEAR_RADIUS, SIGNAL_NAMES
 
 import numpy as np
 
@@ -33,6 +35,28 @@ CYLINDER_HEIGHT = 68.0
 N_ATOM_TYPES = 2
 N_BOND_TYPES = 1
 
+# epigenetic tracks:
+H3K27AC = EpigeneticTrack(
+    "H3K27ac",
+    "H3K27ac_WT_st10.pooled.bw"
+)
+
+H3K9AC = EpigeneticTrack(
+    "H3K9ac",
+    "H3K9ac_WT_st10.pooled.bw"
+)
+
+H3K27ME3 = EpigeneticTrack(
+    "H3K27me3",
+    "H3K27me3_WT_st10.pooled.bw"
+)
+
+H3K9ME3 = EpigeneticTrack(
+    "H3K9me3",
+    "H3K9me3_WT_st10.pooled.bw"
+)
+
+
 #------------------------------------------------------
 # Building genome.
 #------------------------------------------------------
@@ -41,6 +65,17 @@ N_BOND_TYPES = 1
 rng = np.random.default_rng(SEED)
 
 beads = read_bed(BED_FILE)
+
+annotate_genome(beads, H3K27AC)
+annotate_genome(beads, H3K9AC)
+annotate_genome(beads, H3K27ME3)
+annotate_genome(beads, H3K9ME3)
+
+#------------------------------------------------------
+# sanity check for annotation:
+print("\nExample bead signals:")
+print(beads[0].signals)
+#------------------------------------------------------
 
 arms = split_by_arms(beads)
 
@@ -66,3 +101,8 @@ if GEOMETRY == "random_walk":
 elif GEOMETRY == "helix":
     write_data(filename = "helix_genome.data", genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES)
 
+
+#------------------------------------------------------
+# Writing signals.data file.
+#------------------------------------------------------
+write_signal(filename = "signals.data", genome = genome, beads = beads, signal_names = SIGNAL_NAMES)

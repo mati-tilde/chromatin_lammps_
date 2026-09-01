@@ -192,8 +192,8 @@ def write_atoms(genome, beads):
 
     #--------------------------------------------------------
     # sanity check:
-    print(f"Number of frozen atoms: {frozen_beads}.")
-    print(f"Frozen atom indices: {frozen_ids}.")
+    # print(f"Number of frozen atoms: {frozen_beads}.")
+    # print(f"Frozen atom indices: {frozen_ids}.")
     #--------------------------------------------------------
 
     return atoms
@@ -279,6 +279,55 @@ def write_data(filename, genome, beads, n_atom_types, n_bond_types):
 #--------------------------------------------------------------------------
 
 
+
+#--------------------------------------------------------------------------
+# Writing a signal data file to give lammps.
+def write_signal(filename, genome, beads, signal_names):
+
+    signals = []
+
+    # header:
+    signals.append("Atom ID " + " ".join(signal_names))
+
+    atom_id = 1
+
+    # looping over diploid genome:
+    for chromosome, coords in genome.items():
+
+        base_chrom = chromosome[:-1]
+
+        chrom_beads = get_beads_for_chrom(beads, base_chrom)
+
+        #------------------------------------------------
+        # sanity check:
+        if len(coords) != len(chrom_beads):
+            raise RuntimeError(f"{chromosome}: {len(coords)} coordinates but {len(chrom_beads)} beads.")
+        #------------------------------------------------
+
+        for bead in chrom_beads:
+
+            values = []
+
+            for signal_name in signal_names:
+
+                #---------------------------------------
+                # sanity check:
+                if signal_name not in bead.signals:
+                    raise RuntimeError(f"Bead {bead_id} is missing signal {signal_name}.")
+                #---------------------------------------
+
+                values.append(bead.signals[signal_name])
+
+            signals.append(f"{atom_id} " + " ".join(f"{value:.10g}" for value in values))
+
+            atom_id += 1
+
+    with open(filename, "w") as file:
+        file.write("\n".join(signals))
+        file.write("\n")
+
+    print(f"Signal rows written: {atom_id - 1}")
+#--------------------------------------------------------------------------
 
 
 
