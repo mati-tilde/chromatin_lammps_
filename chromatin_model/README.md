@@ -5,6 +5,8 @@
 ## What this repository does:
 This repository contains the code and input files needed to generate
 LAMMPS `.data` files for the chromatin model of the drosophila.
+A `.data` file contains topological information, coordinates and 
+epigenetic signals for all Bead objects.
 
 The user only needs to provide:
 1. the experimental chromosome annotation file (.BED file; .bw files for epigenetic signals
@@ -72,6 +74,8 @@ or
 
 "helix_genome.data"
 
+or the "informed_..._genome.data" if signals are implemented. 
+
 ### 5. Expected output.
 After running 'python writer.py', the generated '.data' file should contain:
 
@@ -80,6 +84,11 @@ After running 'python writer.py', the generated '.data' file should contain:
 . 2 atom types
 . 1 bond type
 . 20 frozen endpoint atoms
+
+and, if informed of signals:
+
+. 26512 rows of four signals each in the order:
+  H3K27AC - H3K9AC - H3K27ME3 - H3K9ME3
 
 
 ## Geometry options.
@@ -124,15 +133,16 @@ These atoms are subsequently fixed in LAMMPS with:
 group for_freeze type 2
 fix freeze for_freeze setforce 0.0 0.0 0.0
 
+## Signal section.
+Retrieves the four epigenetic signals that are stored in each
+Bead object and allows lammps to access them.
+
 
 ## LAMMPS simulation.
 To run a simulation, provide the correct .data file in lammps:
 
-read_data	rw_genome.data
-
-or
-
-read_data	helix_genome.data
+fix signals all property/atom d2_signals 4 ghost yes
+read_data informed_..._genome.data fix signals NULL Signals
 
 
 ## Repository structure.
@@ -145,10 +155,10 @@ read_data	helix_genome.data
   Builds chromosome and diploid genome coordinates.
 
 . 'geometry.py'
-  Implements the available geometry generators.
+  Implements the available geometry generators and boundary constraints.
 
 . 'beads_class.py'
-  Defines a class containing all informations for beads.
+  Defines a class containing all information for beads.
 
 . 'genome_parser.py'
   Reads the experimental '.BED' chromosome annotation.
@@ -165,5 +175,5 @@ read_data	helix_genome.data
 . 'signal_annotator.py'
   Reads .bw files and assigns epigenetic signals to beads.
 
-. 'lammps_genome.in'
+. 'lammps_genome.in', 'informed_lammps.in'
   Input file for LAMMPS.
