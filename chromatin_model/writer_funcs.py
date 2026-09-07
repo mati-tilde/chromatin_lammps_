@@ -52,6 +52,7 @@ def write_header(genome, n_atom_types, n_bond_types, margin = 2.0):
 
     header.append(f"{n_atom_types} atom types")
     header.append(f"{n_bond_types} bond types")
+    #header.append(f"{n_signal_types} signal types")
     header.append("")
 
     header.append(f"{xmin:.6f} {xmax:.6f} xlo xhi")
@@ -119,6 +120,8 @@ def get_beads_for_chrom(beads, chromosome):
 
 
 
+#--------------------------------------------------------------------------
+# Writing the atoms section in lammps with for_freeze atoms.
 def write_atoms(genome, beads):
 
     bead_type = 1
@@ -197,6 +200,9 @@ def write_atoms(genome, beads):
     #--------------------------------------------------------
 
     return atoms
+#--------------------------------------------------------------------------
+
+
 
 
 #--------------------------------------------------------------------------
@@ -248,47 +254,15 @@ def write_bonds(genome):
 
 
 #--------------------------------------------------------------------------
-# Writing the actual .data file.
-def write_data(filename, genome, beads, n_atom_types, n_bond_types):
-
-    # header section:
-    header = write_header(genome, n_atom_types = n_atom_types, n_bond_types = n_bond_types)
-
-    # masses section:
-    masses = write_masses(n_atom_types = n_atom_types)
-
-    # atoms section:
-    atoms = write_atoms(genome, beads)
-
-    # bonds section:
-    bonds = write_bonds(genome)
-
-
-    # assemble:
-    lines = []
-
-    lines.extend(header)
-    lines.extend(masses)
-    lines.extend(atoms)
-    lines.extend(bonds)
-
-    # writing a file:
-    with open(filename, "w") as file:
-
-        file.write("\n".join(lines))
-#--------------------------------------------------------------------------
-
-
-
-#--------------------------------------------------------------------------
-# Writing a signal data file to give lammps.
-def write_signal(filename, genome, beads, signal_names):
+# Writing a signal section in the file to give lammps.
+def write_signal(genome, beads, signal_names):
 
     signals = []
-
+    
     # header:
-    signals.append("Atom ID " + " ".join(signal_names))
-
+    signals.append("Signals")
+    signals.append(" ")
+    
     atom_id = 1
 
     # looping over diploid genome:
@@ -313,7 +287,7 @@ def write_signal(filename, genome, beads, signal_names):
                 #---------------------------------------
                 # sanity check:
                 if signal_name not in bead.signals:
-                    raise RuntimeError(f"Bead {bead_id} is missing signal {signal_name}.")
+                    raise RuntimeError(f"Bead {bead.bead_id} is missing signal {signal_name}.")
                 #---------------------------------------
 
                 values.append(bead.signals[signal_name])
@@ -322,12 +296,48 @@ def write_signal(filename, genome, beads, signal_names):
 
             atom_id += 1
 
-    with open(filename, "w") as file:
-        file.write("\n".join(signals))
-        file.write("\n")
-
-    print(f"Signal rows written: {atom_id - 1}")
+    return signals
 #--------------------------------------------------------------------------
+
+
+
+#--------------------------------------------------------------------------
+# Writing the actual .data file.
+def write_data(filename, genome, beads, n_atom_types, n_bond_types, signal_names):
+
+    # header section:
+    header = write_header(genome, n_atom_types = n_atom_types, n_bond_types = n_bond_types)
+
+    # masses section:
+    masses = write_masses(n_atom_types = n_atom_types)
+
+    # atoms section:
+    atoms = write_atoms(genome, beads)
+
+    # bonds section:
+    bonds = write_bonds(genome)
+
+    # signals section:
+    signals = write_signal(genome, beads, signal_names)
+
+    # assemble:
+    lines = []
+
+    lines.extend(header)
+    lines.extend(masses)
+    lines.extend(atoms)
+    lines.extend(bonds)
+    lines.extend(signals)
+
+    # writing a file:
+    with open(filename, "w") as file:
+
+        file.write("\n".join(lines))
+#--------------------------------------------------------------------------
+
+
+
+
 
 
 

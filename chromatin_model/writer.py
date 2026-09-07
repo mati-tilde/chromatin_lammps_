@@ -97,12 +97,7 @@ elif GEOMETRY == "helix":
 # Writing .data file.
 #------------------------------------------------------
 if GEOMETRY == "random_walk":
-    write_data(filename = "rw_genome.data", genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES)
+    write_data(filename = "informed_rw_genome.data", genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES, signal_names = SIGNAL_NAMES)
 elif GEOMETRY == "helix":
-    write_data(filename = "helix_genome.data", genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES)
+    write_data(filename = "informed_helix_genome.data", genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES, signal_names = SIGNAL_NAMES)
 
-
-#------------------------------------------------------
-# Writing signals.data file.
-#------------------------------------------------------
-write_signal(filename = "signals.data", genome = genome, beads = beads, signal_names = SIGNAL_NAMES)
