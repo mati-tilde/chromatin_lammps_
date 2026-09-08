@@ -1,0 +1,138 @@
+===========================================================================
+STATISTICAL ANALYSIS OF EPIGENETIC SIGNALS, S_ij MATRIX,
+AND EPSILON SCALING FOR DIFFERENT VALUES OF B-MATRIX.
+===========================================================================
+
+#--------------------------------------------------------------------------
+1 -- ALL EQUAL B ELEMENTS, B_ij = 0.0013;
+
+=== DATA CONSISTENCY ===
+Number of atoms          = 26512
+Number of signal entries = 26512
+Atoms with signals       = 26512
+Atoms without signals    = 0
+Signals without atom     = 0
+
+=== RAW SIGNAL STATISTICS ===               !!!!!!!!!!! huge spread in distributions (esp. H3K9me3 !)
+Number of signal vectors: 26512
+
+H3K27ac
+  min    = 0
+  median = 18.3157
+  mean   = 25.675
+  std    = 24.4772
+  p95    = 72.555
+  p99    = 113.733
+  max    = 343.585
+
+H3K9ac
+  min    = 0
+  median = 8.75312
+  mean   = 11.7383
+  std    = 10.0635
+  p95    = 29.9529
+  p99    = 48.6056
+  max    = 306.162
+
+H3K27me3
+  min    = 0
+  median = 8.56577
+  mean   = 20.0467
+  std    = 43.1867
+  p95    = 80.9645
+  p99    = 229.654
+  max    = 1712.05
+
+H3K9me3
+  min    = 0
+  median = 1.32273
+  mean   = 50.3717
+  std    = 187.484
+  p95    = 294.644
+  p99    = 574.998
+  max    = 5981.4
+
+=== INTERACTION STATISTICS ===
+Cutoff = 2.5
+B_ij  = 0.0013
+Number of spatial pairs = 565495
+
+--- S_ij ---                                    !!!! consequent real problem
+  min    = 0
+  median = 4.23734                              epsilon_scale median = 10 ca 
+  mean   = 25.3985
+  std    = 207.935
+  p95    = 94.2617
+  p99    = 272.496
+  max    = 25809                                epsilon_scale max = 6.2 e4 !!!!!!!!!!!!!!!!!!!
+
+--- epsilon_eff ---
+  min    = 0.415
+  median = 4.23734
+  mean   = 25.4047
+  p95    = 94.2617
+  p99    = 272.496
+  max    = 25809
+
+--- epsilon_eff / epsilon0 ---
+  min    = 1
+  median = 10.2104
+  mean   = 61.1626
+  std    = 499.697
+  p95    = 227.132
+  p99    = 656.467
+  max    = 62190.3
+
+--- Pairs affected by B ---
+  modified pairs = 540239 (95.534%)
+  standard LJ pairs = 25256 (4.466%)
+
+#--------------------------------------------------------------------------
+
+
+#--------------------------------------------------------------------------
+2 -- ALL EQUAL B ELEMENTS, B_ij = 0.000013;
+
+=== DATA CONSISTENCY ===
+Number of atoms          = 26512
+Number of signal entries = 26512
+Atoms with signals       = 26512
+Atoms without signals    = 0
+Signals without atom     = 0
+
+=== INTERACTION STATISTICS ===
+Cutoff = 2.5
+B_ij  = 1.3e-05
+Number of spatial pairs = 565495
+
+--- S_ij ---
+  min    = 0
+  median = 0.0423734
+  mean   = 0.253985
+  std    = 2.07935
+  p95    = 0.942617
+  p99    = 2.72496
+  max    = 258.09
+
+--- epsilon_eff ---
+  min    = 0.415
+  median = 0.415
+  mean   = 0.565886
+  p95    = 0.942617
+  p99    = 2.72496
+  max    = 258.09
+
+--- epsilon_eff / epsilon0 ---
+  min    = 1
+  median = 1
+  mean   = 1.36304
+  std    = 4.93196
+  p95    = 2.27132
+  p99    = 6.56467
+  max    = 621.903
+
+--- Pairs affected by B ---
+  modified pairs = 59669 (10.552%)
+  standard LJ pairs = 505826 (89.448%)
+
+#--------------------------------------------------------------------------
