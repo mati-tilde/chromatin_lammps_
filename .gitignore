@@ -6,20 +6,12 @@ venv/
 
 # LAMMPS generated files
 *.lammpstrj
-*.data
-!chromatin_model/helix_genome.data
-!chromatin_model/rw_genome.data
 *.restart
 *.rst
 log.lammps
 simulation_log.txt
 old_tmp_rst
 new_tmp_rst
-
-# Generated figures
-*.png
-!chromatin_model/helix_reports/**/*.png
-!chromatin_model/rw_reports/**/*.png
 
 # Large experimental data
 *.bw

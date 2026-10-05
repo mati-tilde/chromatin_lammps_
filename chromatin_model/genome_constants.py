@@ -90,7 +90,7 @@ Y_SPACING = 40.0
 
 # for the random walk:
 INITIAL_LAYOUT_RW = {
-
+    
     "chr2A": np.array([ 18.0,   0.0,   0.0]),
     "chr3A": np.array([  9.0,  15.588, 0.0]),
     "chrXA": np.array([ -9.0,  15.588, 0.0]),
@@ -126,17 +126,24 @@ MOLECULE_IDS = {
 }
 #-------------------------------------------------
 
-
 #-------------------------------------------------
+# Nuclear confinement dimensions.
 NUCLEAR_RADIUS = 28.0
 NUCLEAR_HEIGHT = 68.0
 #-------------------------------------------------
 
 #-------------------------------------------------
+# Names of the signals used in the analysis.
 SIGNAL_NAMES = [
     "H3K27ac",
     "H3K9ac",
     "H3K27me3",
     "H3K9me3",
 ]
+#-------------------------------------------------
+
+#-------------------------------------------------
+# Parameters for signal normalization.
+LOG_EPS = 1e-6
+SIGNAL_CLIP_PERCENTILE = 99
 #-------------------------------------------------

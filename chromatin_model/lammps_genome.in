@@ -3,7 +3,7 @@ units		lj
 boundary	f f f
 atom_style	bond
 log		    simulation_log.txt
-read_data	rw_ff_genome.data
+read_data	5Oct_layout_test_rw_nosignals.data 
 variable	seed equal 42
 
 # Potential information.
@@ -30,7 +30,7 @@ pair_coeff  1 2  0.425  1.0      2.5                # generic bead in the chromo
 pair_coeff  2 2  0.55   1.0      2.5                # for_freeze w/ for_freeze
 
 # Minimization.
-thermo		10000
+thermo		1000
 thermo_style	custom step temp press pe lx ly lz pxx pyy pzz
 thermo_modify   flush yes
 
@@ -46,10 +46,10 @@ timestep	0.01
 fix		    1 rest nvt temp 1.0 1.0 0.1
 
 restart		10000 old_tmp_rst new_tmp_rst
-thermo		10000
+thermo		1000
 thermo_style    custom step temp pe etotal evdwl
 
 
 #dump command
-dump		sim all custom 100 28Aug_rw_traj.lammpstrj id type x y z
-run		10000
+dump		sim all custom 100 5Oct_rw_traj.lammpstrj id type x y z
+run		1000

@@ -1,0 +1,30 @@
+clear
+
+units lj
+dimension 3
+
+boundary f f f
+
+atom_style bond
+
+read_data 5Oct_layout_test_rw_nosignals.data
+
+mass 1 1.0
+mass 2 1.0
+
+bond_style harmonic
+bond_coeff 1 40.0 1.0
+
+pair_style lj/cut 2.5
+
+pair_coeff 1 1 0.415 1.0 2.5
+pair_coeff 1 2 0.415 1.0 2.5
+pair_coeff 2 2 0.415 1.0 2.5
+
+neighbor 0.3 bin
+neigh_modify delay 0 every 1 check yes
+
+thermo 1
+thermo_style custom step atoms bonds pe ke etotal
+
+run 0

@@ -1,5 +1,5 @@
 import numpy as np
-from genome_constants import NUCLEAR_HEIGHT, NUCLEAR_RADIUS
+from genome_constants import NUCLEAR_HEIGHT, NUCLEAR_RADIUS, LOG_EPS, SIGNAL_CLIP_PERCENTILE
 
 #########################################################
 #
@@ -254,18 +254,17 @@ def write_bonds(genome):
 
 
 #--------------------------------------------------------------------------
-# Writing a signal section in the file to give lammps.
+# Writing a NORMALIZED signal section in the file to give lammps.
 def write_signal(genome, beads, signal_names):
 
     signals = []
-    
-    # header:
-    signals.append("Signals")
-    signals.append(" ")
-    
-    atom_id = 1
 
-    # looping over diploid genome:
+    #------------------------------------------------
+    # first pass: collect all signal values.
+    #------------------------------------------------
+
+    all_values = []
+
     for chromosome, coords in genome.items():
 
         base_chrom = chromosome[:-1]
@@ -292,9 +291,41 @@ def write_signal(genome, beads, signal_names):
 
                 values.append(bead.signals[signal_name])
 
-            signals.append(f"{atom_id} " + " ".join(f"{value:.10g}" for value in values))
+            all_values.append(values)
 
-            atom_id += 1
+    # Convert to numpy array:
+    all_values = np.asarray(all_values,dtype=float)
+
+    #-------------------------------------------------
+    # normalization: log scaling + percentile clipping
+    #-------------------------------------------------
+
+    epsilon = LOG_EPS
+
+    values_log = np.log(all_values + epsilon)
+
+    p_high = np.percentile(values_log, SIGNAL_CLIP_PERCENTILE, axis=0)
+
+    clipped = np.clip(values_log, 0, p_high)    
+
+    values_norm = clipped / p_high
+
+    #------------------------------------------------
+    # second pass: write normalized values.
+    #------------------------------------------------
+
+    signals.append("Signals")
+    signals.append(" ")
+
+    for atom_id, values in enumerate(values_norm, start=1):
+
+        signals.append(
+            f"{atom_id} "
+            + " ".join(
+                f"{value:.10g}"
+                for value in values
+            )
+        )
 
     return signals
 #--------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 from genome_parser import read_bed
-from builder import split_by_arms, build_chroms, build_genome
+from constrained_builder import split_by_arms, build_chroms, build_genome
 from writer_funcs import write_data, write_signal
 from signal_annotator import annotate_genome
 from epigenetic_track import EpigeneticTrack
@@ -62,7 +62,34 @@ H3K9ME3 = EpigeneticTrack(
 #------------------------------------------------------
 
 # random generatore for random walk:
-rng = np.random.default_rng(SEED)
+# ------------------------------------------------------
+# Independent random-number generators for each
+# chromosome copy.
+# ------------------------------------------------------
+
+MASTER_SEED = np.random.SeedSequence(SEED)
+
+COPY_NAMES = [
+    "chr2A",
+    "chr2B",
+    "chr3A",
+    "chr3B",
+    "chrXA",
+    "chrXB",
+]
+
+child_sequences = MASTER_SEED.spawn(len(COPY_NAMES))
+
+
+rngs = {
+    name: np.random.default_rng(seed_sequence)
+    for name, seed_sequence in zip(COPY_NAMES, child_sequences)
+}
+
+
+print("Available RNGs:")
+for name in rngs:
+    print(f"  {name}")
 
 beads = read_bed(BED_FILE)
 
@@ -82,9 +109,9 @@ arms = split_by_arms(beads)
 # generating genome accordingly to method:
 if GEOMETRY == "random_walk":
 
-    chroms = build_chroms(arms, method = GEOMETRY, step_size = STEP_SIZE, rng = rng, boundary = "cylinder", cyl_radius = CYLINDER_RADIUS, cyl_height = CYLINDER_HEIGHT)
+    chroms = build_chroms(arms, method = GEOMETRY, step_size = STEP_SIZE, rngs = rngs, boundary = "cylinder", cyl_radius = CYLINDER_RADIUS, cyl_height = CYLINDER_HEIGHT)
 
-    genome = build_genome(chroms, arms, method = GEOMETRY, step_size = STEP_SIZE, rng = rng, boundary = "cylinder", cyl_radius = CYLINDER_RADIUS, cyl_height = CYLINDER_HEIGHT, nuclear_radius = NUCLEAR_RADIUS, nuclear_height = NUCLEAR_HEIGHT)
+    genome = build_genome(chroms, arms, method = GEOMETRY, step_size = STEP_SIZE, rngs = rngs, boundary = "cylinder", cyl_radius = CYLINDER_RADIUS, cyl_height = CYLINDER_HEIGHT, nuclear_radius = NUCLEAR_RADIUS, nuclear_height = NUCLEAR_HEIGHT)
 
 
 elif GEOMETRY == "helix":
@@ -97,7 +124,7 @@ elif GEOMETRY == "helix":
 # Writing .data file.
 #------------------------------------------------------
 if GEOMETRY == "random_walk":
-    write_data(filename = "informed_rw_genome.data", genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES, signal_names = SIGNAL_NAMES)
+    write_data(filename = "5Oct_layout_test_rw.data", genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES, signal_names = SIGNAL_NAMES)
 elif GEOMETRY == "helix":
-    write_data(filename = "informed_helix_genome.data", genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES, signal_names = SIGNAL_NAMES)
+    write_data(filename = "5Oct_topology_test_helix.data", genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES, signal_names = SIGNAL_NAMES)
 

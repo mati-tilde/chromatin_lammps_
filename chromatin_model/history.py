@@ -488,6 +488,258 @@ def generate_random_walk(n_beads: int, step_size: float, start = None, avoid_coo
 
 
 
+# VERSION 2: worked, but no endpoints were constrained.
+def generate_random_walk(n_beads: int, step_size: float, start = None, avoid_coords = None, rng = None, reverse: bool = False, boundary = None, **boundary_kwargs):
+
+    #------------------------------------------------------------------
+    # sanity check:
+    #------------------------------------------------------------------
+
+    if n_beads < 2:
+        raise ValueError("Number of beads has to be at least 2 (first and last)!")
+
+    if step_size <= 0:
+        raise ValueError("Step length must be a positive value.")
+
+    # random generator:
+    if rng is None:
+        rng = np.random.default_rng()
+
+    # starting point:
+    if start is None:
+        start = np.array([0.0, 0.0, 0.0])
+
+    else:
+        start = np.asarray(start)
+
+        if start.shape != (3,):
+            raise ValueError("Start must be a 3-element coordinate.")
+
+    # check starting point against boundary:
+    if not check_constraint(boundary, start, **boundary_kwargs):
+        raise ValueError("The starting point does not satisfy the selected boundary.")
+
+    #------------------------------------------------------------------
+    # allocate coordinates:
+    #------------------------------------------------------------------
+
+    # extra first point is used as the continuation point:
+    coords = np.zeros((n_beads + 1, 3))
+
+    coords[0] = start
+
+    #------------------------------------------------------------------
+    # previous coordinates to avoid:
+    #------------------------------------------------------------------
+
+    if avoid_coords is not None:
+
+        avoid_coords = np.asarray(avoid_coords)
+
+        if avoid_coords.ndim != 2 or avoid_coords.shape[1] != 3:
+            raise ValueError("avoid_coords must be an array of shape (N,3).")
+
+    #------------------------------------------------------------------
+    # parameters for self-avoidance and backtracking:
+    #------------------------------------------------------------------
+
+    min_dist = 0.7
+    max_attempts = 10000
+    max_backtracks = 100
+
+    backtracks = 0
+
+    #------------------------------------------------------------------
+    # generate chain:
+    #------------------------------------------------------------------
+
+    i = 1
+
+    while i < n_beads + 1:
+
+        accepted = False
+        attempts = 0
+
+        #--------------------------------------------------------------
+        # try to generate bead i:
+        #--------------------------------------------------------------
+
+        while not accepted and attempts < max_attempts:
+
+            attempts += 1
+
+            #----------------------------------------------------------
+            # random direction:
+            #----------------------------------------------------------
+
+            direction = rng.normal(size=3)
+
+            norm = np.linalg.norm(direction)
+
+            if norm == 0:
+                continue
+
+            direction /= norm
+
+            direction_sign = -1 if reverse else 1
+
+            # candidate point:
+            new_point = (coords[i - 1] + direction_sign * step_size * direction)
+
+            #----------------------------------------------------------
+            # boundary check:
+            #----------------------------------------------------------
+
+            accepted_boundary = check_constraint(boundary, new_point, **boundary_kwargs)
+
+            if not accepted_boundary:
+                continue
+
+            #----------------------------------------------------------
+            # self-avoidance check:
+            #----------------------------------------------------------
+
+            # previous beads in the current arm.
+            # the directly bonded previous bead coords[i-1] is excluded automatically.
+
+            previous_points = coords[:i - 1]
+
+            # points from a previously generated arm.
+
+            # NOTE:
+            # the last point of avoid_coords is the arm-junction bead, which is bonded to the first bead of this arm, so it must NOT be subject to the minimum-distance rule.
+
+            if avoid_coords is not None:
+                avoid_points = avoid_coords[:-1]
+            else:
+                avoid_points = np.empty((0, 3))
+
+            # combine all points that the new point must avoid:
+            if len(avoid_points) == 0:
+
+                points_to_avoid = previous_points
+
+            elif len(previous_points) == 0:
+
+                points_to_avoid = avoid_points
+
+            else:
+
+                points_to_avoid = np.vstack((avoid_points, previous_points))
+
+            # check distances:
+            if len(points_to_avoid) == 0:
+
+                accepted_dist = True
+
+            else:
+
+                squared_distances = np.sum((points_to_avoid - new_point) ** 2, axis = 1)
+
+                accepted_dist = np.all(squared_distances >= min_dist ** 2)
+
+                if not accepted_dist:
+                    continue
+
+            # if we reached this point, the candidate is valid:
+            accepted = True
+
+        #--------------------------------------------------------------
+        # no valid candidate found :/
+        #--------------------------------------------------------------
+
+        if not accepted:
+
+            # cannot backtrack beyond the initial point:
+            if i <= 1:
+                raise RuntimeError("Unable to generate a self-avoiding random walk.")
+
+            backtracks += 1
+
+            if backtracks > max_backtracks:
+                raise RuntimeError("Unable to generate a self-avoiding random walk after repeated backtracking.")
+
+            # move back one bead:
+            i -= 1
+
+            # remove the abandoned part of the chain:
+            coords[i + 1:] = np.nan
+
+            # try generating this bead again:
+            continue
+
+        #--------------------------------------------------------------
+        # store accepted point:
+        #--------------------------------------------------------------
+
+        coords[i] = new_point
+
+        # restore backtracks:
+        backtracks = 0
+
+        # move to next bead:
+        i += 1
+
+    #------------------------------------------------------------------
+    # output:
+    #------------------------------------------------------------------
+
+    # discard the artificial continuation point:
+    return coords[1:]
+
+
+
+
+#========================================================================================================
+# FROM: writer_funcs.py (up to 1st October)
+
+
+#--------------------------------------------------------------------------
+# Writing a signal section in the file to give lammps.
+def write_signal(genome, beads, signal_names):
+
+    signals = []
+    
+    # header:
+    signals.append("Signals")
+    signals.append(" ")
+    
+    atom_id = 1
+
+    # looping over diploid genome:
+    for chromosome, coords in genome.items():
+
+        base_chrom = chromosome[:-1]
+
+        chrom_beads = get_beads_for_chrom(beads, base_chrom)
+
+        #------------------------------------------------
+        # sanity check:
+        if len(coords) != len(chrom_beads):
+            raise RuntimeError(f"{chromosome}: {len(coords)} coordinates but {len(chrom_beads)} beads.")
+        #------------------------------------------------
+
+        for bead in chrom_beads:
+
+            values = []
+
+            for signal_name in signal_names:
+
+                #---------------------------------------
+                # sanity check:
+                if signal_name not in bead.signals:
+                    raise RuntimeError(f"Bead {bead.bead_id} is missing signal {signal_name}.")
+                #---------------------------------------
+
+                values.append(bead.signals[signal_name])
+
+            signals.append(f"{atom_id} " + " ".join(f"{value:.10g}" for value in values))
+
+            atom_id += 1
+
+    return signals
+#--------------------------------------------------------------------------
+
 
 
 

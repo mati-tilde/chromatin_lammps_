@@ -15,6 +15,133 @@ import numpy as np
 
 
 
+# HELPERS.
+#----------------------------------------------------------------------------------------------------------
+
+#**********************************************************************************************************
+# Return the integer 3D cell index containing a point.
+def _cell_index(point, cell_size):
+
+    point = np.asarray(point)
+
+    if point.shape != (3,):
+        raise ValueError("Point must be a 3-element coordinate.")
+
+    return tuple(np.floor(point / cell_size).astype(int))
+
+
+#**********************************************************************************************************
+
+
+# Return the cell itself and its 26 neighboring cells.
+def _neighboring_cells(cell):
+    cx, cy, cz = cell
+
+    neighbors = []
+
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                neighbors.append((cx + dx, cy + dy, cz + dz))
+
+    return neighbors
+
+
+#**********************************************************************************************************
+
+
+# Assign each point to its spatial cell; returns a dictionary (cell index -> list of point indeces).
+def _build_cell_list(points, cell_size):
+    points = np.asarray(points)
+
+    if points.ndim != 2 or points.shape[1] != 3:
+        raise ValueError("Points must be an array of shape (N,3).")
+
+    if cell_size <= 0:
+        raise ValueError("Cell size must be positive.")
+
+    cell_list = {}
+
+    for i, point in enumerate(points):
+
+        cell = _cell_index(point, cell_size)
+
+        if cell not in cell_list:
+            cell_list[cell] = []
+
+        cell_list[cell].append(i)
+
+    return cell_list
+
+
+#**********************************************************************************************************
+
+
+# Return the indices of points lying in the cell of `point` or any of its 26 neighboring cells.
+def _get_neighbor_indices(cell_list, point, cell_size):
+
+    cell = _cell_index(point, cell_size)
+
+    neighbor_indices = []
+
+    for neighbor in _neighboring_cells(cell):
+
+        if neighbor in cell_list:
+            neighbor_indices.extend(cell_list[neighbor])
+
+
+    return neighbor_indices
+
+
+#**********************************************************************************************************
+
+
+# Check whether `point` is closer than `min_dist` to any point stored in `cell_list`.
+def _violates_min_distance(points, point, cell_list, cell_size, min_dist):
+
+    neighbor_indices = _get_neighbor_indices(cell_list, point, cell_size)
+
+    if len(neighbor_indices) == 0:
+        return False
+
+    neighbor_points = points[neighbor_indices]
+
+    squared_distances = np.sum((neighbor_points - point) ** 2, axis=1)
+
+    return np.any(squared_distances < min_dist ** 2)
+
+
+#**********************************************************************************************************
+
+
+# Add one point index to its corresponding spatial cell.
+def _add_to_cell_list(cell_list, point_index, point, cell_size):
+    cell = _cell_index(point, cell_size)
+
+    if cell not in cell_list:
+        cell_list[cell] = []
+
+    cell_list[cell].append(point_index)
+
+
+#**********************************************************************************************************
+
+
+# Remove one point index from its spatial cell.
+def _remove_from_cell_list(cell_list, point_index, point, cell_size):
+    cell = _cell_index(point, cell_size)
+
+    if cell not in cell_list:
+        raise KeyError(f"Cell {cell} does not exist in the cell list.")
+
+    cell_list[cell].remove(point_index)
+
+    if len(cell_list[cell]) == 0:
+        del cell_list[cell]
+#----------------------------------------------------------------------------------------------------------
+
+
+
 
 # METHOD DISPATCHER.
 #----------------------------------------------------------------------------------------------------------
@@ -59,7 +186,9 @@ def generate_coords(method: str, boundary: str | None = None, boundary_kwargs: d
 # 	height: extension along z of the helix;
 # 	start: point where the helix starts (necessary for initial coordinates);
 # 	turns: number of full 2π revolutions occurring;
-# 	phase: initial angular offset.
+# 	phase: initial angular offset;
+#   reverse: allows the helix to grow the other way around;
+#   drift: angular distance to the z axis.
 # return output: "coords" --> np.ndarray, as an array of shape (n_beads,3), giving [x,y,z] for each bead.
 
 def generate_helix(n_beads: int, radius: float, height: float, turns: float, start = None, phase: float = 0.0, reverse: bool = False, drift: float = 0.0):
@@ -109,25 +238,36 @@ def generate_helix(n_beads: int, radius: float, height: float, turns: float, sta
 # 2) random walk method (stochastic)
 # input parameters:
 # 	n_beads: number of beads to use in the simulation;
-# 	step_length: length of the random walk step;
+# 	step_size: length of the random walk step;
 # 	start: point where the helix starts (necessary for initial coordinates);
 # 	avoid_coords: contains coords of previous arm to check self avoidance with;
 # 	rng: random generator for reproducibility;
 # 	reverse: possibility to build the arm lopsided;
+#   target_z: endpoint constraints for beginning/end of each arm and junction;
 # 	boundary: imposing boundary on building the random walk;
 # return output: "coords" --> np.ndarray, as an array of shape (n_beads,3), giving [x,y,z] for each bead.
 
-def generate_random_walk(n_beads: int, step_size: float, start = None, avoid_coords = None, rng = None, reverse: bool = False, boundary = None, **boundary_kwargs):
+def generate_random_walk(
+    n_beads: int, step_size: float, start = None, avoid_coords = None, rng = None, reverse: bool = False, 
+    target_z = None, lambda_drift = 0.0, drift_angle = 0.0, boundary = None, **boundary_kwargs):
 
     #------------------------------------------------------------------
     # sanity check:
-    #------------------------------------------------------------------
-
     if n_beads < 2:
         raise ValueError("Number of beads has to be at least 2 (first and last)!")
 
     if step_size <= 0:
         raise ValueError("Step length must be a positive value.")
+
+    if target_z is not None and not np.isfinite(target_z):
+        raise ValueError("target_z must be finite.")
+
+    if target_z is not None and not (0.0 <= target_z <= boundary_kwargs.get("cyl_height", np.inf)):
+        raise ValueError("target_z must lie inside the selected boundary.")
+
+    if lambda_drift < 0: 
+        raise ValueError("Preference strength 'lambda_drift' must be non-negative.")
+    #------------------------------------------------------------------
 
     # random generator:
     if rng is None:
@@ -143,6 +283,14 @@ def generate_random_walk(n_beads: int, step_size: float, start = None, avoid_coo
         if start.shape != (3,):
             raise ValueError("Start must be a 3-element coordinate.")
 
+    # check whether the target is reachable at all
+    if target_z is not None:
+
+        max_dz = (n_beads - 1) * step_size
+
+        if abs(target_z - start[2]) > max_dz:
+            raise ValueError("The requested target_z cannot be reached with the given number of beads and step size.")
+
     # check starting point against boundary:
     if not check_constraint(boundary, start, **boundary_kwargs):
         raise ValueError("The starting point does not satisfy the selected boundary.")
@@ -150,7 +298,6 @@ def generate_random_walk(n_beads: int, step_size: float, start = None, avoid_coo
     #------------------------------------------------------------------
     # allocate coordinates:
     #------------------------------------------------------------------
-
     # extra first point is used as the continuation point:
     coords = np.zeros((n_beads + 1, 3))
 
@@ -159,7 +306,6 @@ def generate_random_walk(n_beads: int, step_size: float, start = None, avoid_coo
     #------------------------------------------------------------------
     # previous coordinates to avoid:
     #------------------------------------------------------------------
-
     if avoid_coords is not None:
 
         avoid_coords = np.asarray(avoid_coords)
@@ -170,17 +316,27 @@ def generate_random_walk(n_beads: int, step_size: float, start = None, avoid_coo
     #------------------------------------------------------------------
     # parameters for self-avoidance and backtracking:
     #------------------------------------------------------------------
-
     min_dist = 0.7
     max_attempts = 10000
     max_backtracks = 100
+
+    # Cell list for the previously generated arm.
+    if avoid_coords is not None:
+        avoid_cell_list = _build_cell_list(
+            avoid_coords[:-1],
+            min_dist
+        )
+    else:
+        avoid_cell_list = {}
+
+    # Cell list for the current arm.
+    current_cell_list = {}
 
     backtracks = 0
 
     #------------------------------------------------------------------
     # generate chain:
     #------------------------------------------------------------------
-
     i = 1
 
     while i < n_beads + 1:
@@ -188,31 +344,129 @@ def generate_random_walk(n_beads: int, step_size: float, start = None, avoid_coo
         accepted = False
         attempts = 0
 
-        #--------------------------------------------------------------
         # try to generate bead i:
-        #--------------------------------------------------------------
-
         while not accepted and attempts < max_attempts:
 
             attempts += 1
 
-            #----------------------------------------------------------
-            # random direction:
-            #----------------------------------------------------------
+            # candidate point -- target aware:
+            if target_z is not None and i == n_beads:
 
-            direction = rng.normal(size=3)
+                # final step: force the last bead to target_z
+                dz = target_z - coords[i - 1, 2]
 
-            norm = np.linalg.norm(direction)
+                if abs(dz) > step_size:
+                    continue
 
-            if norm == 0:
-                continue
+                xy_step = np.sqrt(step_size**2 - dz**2)
 
-            direction /= norm
+                phi = rng.uniform(0.0, 2.0 * np.pi)
 
-            direction_sign = -1 if reverse else 1
+                new_point = coords[i - 1] + np.array([xy_step * np.cos(phi), xy_step * np.sin(phi), dz])
 
-            # candidate point:
-            new_point = (coords[i - 1] + direction_sign * step_size * direction)
+            else:
+                # ordinary random-walk step
+                direction_sign = -1 if reverse else 1
+
+                if target_z is not None:
+
+                    # ----------------------------------------------------------
+                    # Target-aware random step.
+                    #
+                    # We choose the z-component so that the target remains
+                    # reachable with the steps that are still available.
+                    # ----------------------------------------------------------
+
+                    current_z = coords[i - 1, 2]
+
+                    dz_target = target_z - current_z
+
+                    remaining_steps = n_beads - i
+
+                    # Allowed range for the ACTUAL z displacement.
+                    dz_min = max(-step_size, dz_target - remaining_steps * step_size)
+
+                    dz_max = min(step_size, dz_target + remaining_steps * step_size)
+
+                    if dz_min > dz_max:
+                        continue
+
+                    # Because reverse changes the sign of the random direction,
+                    # transform the allowed interval accordingly.
+                    raw_dz_min = min(direction_sign * dz_min, direction_sign * dz_max)
+
+                    raw_dz_max = max(direction_sign * dz_min, direction_sign * dz_max)
+
+                    # ----------------------------------------------------------
+                    # Brownian-bridge-like proposal for the axial step.
+                    # ----------------------------------------------------------
+
+                    remaining_steps = n_beads - i + 1
+
+                    delta_target = target_z - coords[i - 1, 2]
+
+                    bridge_mean = delta_target / remaining_steps
+
+                    bridge_var = (
+                        step_size**2 / 3.0
+                        * (remaining_steps - 1)
+                        / remaining_steps
+                    )
+
+                    bridge_std = np.sqrt(bridge_var)
+
+                    # Express the bridge mean in the raw-dz coordinate system.
+                    bridge_mean_raw = direction_sign * bridge_mean
+
+                    raw_dz = rng.normal(
+                        loc=bridge_mean_raw,
+                        scale=bridge_std
+                    )
+
+                    if not (
+                        raw_dz_min <= raw_dz <= raw_dz_max
+                    ):
+                        continue
+
+                    dz = direction_sign * raw_dz
+
+                    # Remaining displacement in x-y.
+                    xy_step = np.sqrt(step_size**2 - raw_dz**2)
+
+                    # Random azimuth in the x-y plane.
+                    if lambda_drift == 0.0:
+                        phi = rng.uniform(0.0, 2.0 * np.pi)
+                    else:
+                        phi = rng.vonmises(drift_angle, lambda_drift)
+
+                    dx = xy_step * np.cos(phi)
+                    dy = xy_step * np.sin(phi)
+
+                    new_point = coords[i - 1] + np.array([dx, dy, dz])
+
+                else:
+                    # Original unconstrained random-walk step.
+
+                    direction = rng.normal(size=3)
+
+                    norm = np.linalg.norm(direction)
+
+                    if norm == 0:
+                        continue
+
+                    direction /= norm
+
+                    new_point = (coords[i - 1] + direction_sign * step_size * direction)
+
+            # target reachability check:
+            if target_z is not None:
+
+                remaining_steps = n_beads - i
+
+                max_remaining_dz = remaining_steps * step_size
+
+                if abs(target_z - new_point[2]) > max_remaining_dz:
+                    continue
 
             #----------------------------------------------------------
             # boundary check:
@@ -223,61 +477,26 @@ def generate_random_walk(n_beads: int, step_size: float, start = None, avoid_coo
             if not accepted_boundary:
                 continue
 
-            #----------------------------------------------------------
+            # ----------------------------------------------------------
             # self-avoidance check:
-            #----------------------------------------------------------
-
-            # previous beads in the current arm.
-            # the directly bonded previous bead coords[i-1] is excluded automatically.
-
-            previous_points = coords[:i - 1]
-
-            # points from a previously generated arm.
-
-            # NOTE:
-            # the last point of avoid_coords is the arm-junction bead, which is bonded to the first bead of this arm, so it must NOT be subject to the minimum-distance rule.
-
+            # ----------------------------------------------------------
+            # check against the previously generated arm using the spatial cell list:
             if avoid_coords is not None:
-                avoid_points = avoid_coords[:-1]
-            else:
-                avoid_points = np.empty((0, 3))
-
-            # combine all points that the new point must avoid:
-            if len(avoid_points) == 0:
-
-                points_to_avoid = previous_points
-
-            elif len(previous_points) == 0:
-
-                points_to_avoid = avoid_points
-
-            else:
-
-                points_to_avoid = np.vstack((avoid_points, previous_points))
-
-            # check distances:
-            if len(points_to_avoid) == 0:
-
-                accepted_dist = True
-
-            else:
-
-                squared_distances = np.sum((points_to_avoid - new_point) ** 2, axis = 1)
-
-                accepted_dist = np.all(squared_distances >= min_dist ** 2)
-
-                if not accepted_dist:
+                if _violates_min_distance(avoid_coords[:-1], new_point, avoid_cell_list, min_dist, min_dist):
                     continue
 
+            # Check against the previous beads of the current arm using the dynamic cell list.
+
+            if _violates_min_distance(coords, new_point, current_cell_list, min_dist, min_dist):
+                continue
+            
             # if we reached this point, the candidate is valid:
             accepted = True
 
         #--------------------------------------------------------------
-        # no valid candidate found :/
+        # no valid candidate found (backtracking section) :/
         #--------------------------------------------------------------
-
         if not accepted:
-
             # cannot backtrack beyond the initial point:
             if i <= 1:
                 raise RuntimeError("Unable to generate a self-avoiding random walk.")
@@ -290,6 +509,8 @@ def generate_random_walk(n_beads: int, step_size: float, start = None, avoid_coo
             # move back one bead:
             i -= 1
 
+            _remove_from_cell_list(current_cell_list, i, coords[i], min_dist)
+
             # remove the abandoned part of the chain:
             coords[i + 1:] = np.nan
 
@@ -301,6 +522,8 @@ def generate_random_walk(n_beads: int, step_size: float, start = None, avoid_coo
         #--------------------------------------------------------------
 
         coords[i] = new_point
+
+        _add_to_cell_list(current_cell_list, i, new_point, min_dist)
 
         # restore backtracks:
         backtracks = 0
@@ -500,22 +723,38 @@ def _is_inside_cyl(point, cyl_radius: float, cyl_height: float):
 
 
 
+if __name__ == "__main__":
 
+    points = np.array([
+        [1.2, -0.3, 4.8],
+        [1.4, -0.1, 4.9],
+        [-2.0, 1.0, 3.0],
+    ])
 
+    cell_size = 0.7
 
+    cell_list = {}
 
+    # Add points one at a time.
+    for i, point in enumerate(points):
 
+        _add_to_cell_list(
+            cell_list,
+            i,
+            point,
+            cell_size
+        )
 
+    print("After adding:")
+    print(cell_list)
 
+    # Remove point 1.
+    _remove_from_cell_list(
+        cell_list,
+        1,
+        points[1],
+        cell_size
+    )
 
-
-
-
-
-
-
-
-
-
-
-
+    print("After removing point 1:")
+    print(cell_list)
