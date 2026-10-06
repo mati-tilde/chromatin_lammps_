@@ -9,6 +9,17 @@ from genome_constants import NUCLEAR_HEIGHT, NUCLEAR_RADIUS, LOG_EPS, SIGNAL_CLI
 
 
 #--------------------------------------------------------------------------
+# Helper to identify chromosomes.
+def get_base_chromosome(chromosome):
+    if chromosome[-1] in {"A", "B"}:
+        return chromosome[:-1]
+
+    return chromosome
+#--------------------------------------------------------------------------
+
+
+
+#--------------------------------------------------------------------------
 # Writing the header for the file.
 # input: 1) genome: genome dictionary built before;
 #  	     2) n_atom_types: number of atom types;
@@ -144,7 +155,7 @@ def write_atoms(genome, beads):
     for chromosome, coords in genome.items():
 
         # recover the original chromosome name and arm name:
-        base_chrom = chromosome[:-1]
+        base_chrom = get_base_chromosome(chromosome)
 
         # retrieve the corresponding beads:
         chrom_beads = get_beads_for_chrom(beads, base_chrom)
@@ -267,8 +278,7 @@ def write_signal(genome, beads, signal_names):
 
     for chromosome, coords in genome.items():
 
-        base_chrom = chromosome[:-1]
-
+        base_chrom = get_base_chromosome(chromosome)
         chrom_beads = get_beads_for_chrom(beads, base_chrom)
 
         #------------------------------------------------
@@ -334,7 +344,7 @@ def write_signal(genome, beads, signal_names):
 
 #--------------------------------------------------------------------------
 # Writing the actual .data file.
-def write_data(filename, genome, beads, n_atom_types, n_bond_types, signal_names):
+def write_data(filename, genome, beads, n_atom_types, n_bond_types, signal_names, include_signals = True):
 
     # header section:
     header = write_header(genome, n_atom_types = n_atom_types, n_bond_types = n_bond_types)
@@ -349,7 +359,8 @@ def write_data(filename, genome, beads, n_atom_types, n_bond_types, signal_names
     bonds = write_bonds(genome)
 
     # signals section:
-    signals = write_signal(genome, beads, signal_names)
+    if include_signals:
+        signals = write_signal(genome, beads, signal_names)
 
     # assemble:
     lines = []
@@ -358,12 +369,16 @@ def write_data(filename, genome, beads, n_atom_types, n_bond_types, signal_names
     lines.extend(masses)
     lines.extend(atoms)
     lines.extend(bonds)
-    lines.extend(signals)
+
+    if include_signals:
+        lines.extend(signals)
 
     # writing a file:
     with open(filename, "w") as file:
 
         file.write("\n".join(lines))
+
+    print(f"File: {filename} written successfully.")
 #--------------------------------------------------------------------------
 
 

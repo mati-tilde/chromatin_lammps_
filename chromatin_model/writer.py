@@ -1,21 +1,39 @@
+import numpy as np
+import argparse
+
 from genome_parser import read_bed
-from constrained_builder import split_by_arms, build_chroms, build_genome
-from writer_funcs import write_data, write_signal
+from constrained_builder import split_by_arms, build_chroms, build_genome, build_single_chrom
+from writer_funcs import write_data
 from signal_annotator import annotate_genome
 from epigenetic_track import EpigeneticTrack
 
-from genome_constants import NUCLEAR_HEIGHT, NUCLEAR_RADIUS, SIGNAL_NAMES
+from genome_constants import (CHROMOSOME_ARMS, INITIAL_LAYOUT, INITIAL_LAYOUT_RW, NUCLEAR_HEIGHT, NUCLEAR_RADIUS, SIGNAL_NAMES)
 
-import numpy as np
 
-#------------------------------------------------------
-# Parameters.
-#------------------------------------------------------
 
-# import choices:
-BED_FILE = "comp_HiTC_10000_WT_ST10_refined_with_chromwide.bed"
+#-------------------------------------------------------------
+# Command-line arguments.
+#-------------------------------------------------------------
 
-GEOMETRY = "random_walk"
+parser = argparse.ArgumentParser(description = "Build a coarse-grained Drosophila chromosome/genome geometry.")
+
+parser.add_argument("--geometry", required = True, choices = ["random_walk", "helix"], default = "random_walk", help = "Geometry generation method.")
+
+parser.add_argument("--chromosomes", required = True, choices = ["all", "chr2", "chr3", "chrX"], default = "all", help = "Chromosome to generate, or 'all' for the full genome.")
+
+parser.add_argument("--bed", default = "comp_HiTC_10000_WT_ST10_refined_with_chromwide.bed", help = "BED file containing the chromosome segmentation.")
+
+args = parser.parse_args()
+
+BED_FILE = args.bed
+GEOMETRY = args.geometry
+CHROMOSOMES = args.chromosomes
+
+VALID_CHROMOSOMES = {"chr2", "chr3", "chrX"}
+
+#-------------------------------------------------------------
+# Parameters for the chosen geometry.
+#-------------------------------------------------------------
 
 # for helix:
 HELIX_RADIUS = 5.0
@@ -29,7 +47,6 @@ SEED = 42
 # cylinder boundary (for random walk only):
 CYLINDER_RADIUS = 8.0
 CYLINDER_HEIGHT = 68.0
-
 
 # types (for lammps):
 N_ATOM_TYPES = 2
@@ -57,29 +74,20 @@ H3K9ME3 = EpigeneticTrack(
 )
 
 
-#------------------------------------------------------
-# Building genome.
-#------------------------------------------------------
+#---------------------------------------------------------------
+# Rng setup for random walk:
 
-# random generatore for random walk:
-# ------------------------------------------------------
-# Independent random-number generators for each
-# chromosome copy.
-# ------------------------------------------------------
+# Independent random-number generators for each chromosome copy.
+#---------------------------------------------------------------
 
 MASTER_SEED = np.random.SeedSequence(SEED)
 
-COPY_NAMES = [
-    "chr2A",
-    "chr2B",
-    "chr3A",
-    "chr3B",
-    "chrXA",
-    "chrXB",
-]
+if CHROMOSOMES == "all":
+    COPY_NAMES = ["chr2A", "chr2B", "chr3A", "chr3B", "chrXA", "chrXB"]
+else:
+    COPY_NAMES = [CHROMOSOMES]
 
 child_sequences = MASTER_SEED.spawn(len(COPY_NAMES))
-
 
 rngs = {
     name: np.random.default_rng(seed_sequence)
@@ -91,6 +99,10 @@ print("Available RNGs:")
 for name in rngs:
     print(f"  {name}")
 
+#------------------------------------------------------
+# Building annotated genome.
+#------------------------------------------------------
+
 beads = read_bed(BED_FILE)
 
 annotate_genome(beads, H3K27AC)
@@ -100,31 +112,74 @@ annotate_genome(beads, H3K9ME3)
 
 #------------------------------------------------------
 # sanity check for annotation:
-print("\nExample bead signals:")
-print(beads[0].signals)
+# print("\nExample bead signals:")
+# print(beads[0].signals)
 #------------------------------------------------------
 
 arms = split_by_arms(beads)
 
-# generating genome accordingly to method:
-if GEOMETRY == "random_walk":
+#-------------------------------------------------------------------------
+# Building genome accordingly to chosen geometry and chromosome selection.
+#-------------------------------------------------------------------------
 
-    chroms = build_chroms(arms, method = GEOMETRY, step_size = STEP_SIZE, rngs = rngs, boundary = "cylinder", cyl_radius = CYLINDER_RADIUS, cyl_height = CYLINDER_HEIGHT)
+# ****************************************************************************************
+if CHROMOSOMES == "all":
 
-    genome = build_genome(chroms, arms, method = GEOMETRY, step_size = STEP_SIZE, rngs = rngs, boundary = "cylinder", cyl_radius = CYLINDER_RADIUS, cyl_height = CYLINDER_HEIGHT, nuclear_radius = NUCLEAR_RADIUS, nuclear_height = NUCLEAR_HEIGHT)
+    if GEOMETRY == "random_walk":
 
+        chroms = build_chroms(arms, method = GEOMETRY, step_size = STEP_SIZE, rngs = rngs, boundary = "cylinder", cyl_radius = CYLINDER_RADIUS, cyl_height = CYLINDER_HEIGHT)
 
-elif GEOMETRY == "helix":
+        genome = build_genome(chroms, arms, method = GEOMETRY, step_size = STEP_SIZE, rngs = rngs, boundary = "cylinder", cyl_radius = CYLINDER_RADIUS, cyl_height = CYLINDER_HEIGHT, nuclear_radius = NUCLEAR_RADIUS, nuclear_height = NUCLEAR_HEIGHT)
 
-    chroms = build_chroms(arms, method = GEOMETRY, radius = HELIX_RADIUS, height = HELIX_HEIGHT, turns = HELIX_TURNS)
+    elif GEOMETRY == "helix":
 
-    genome = build_genome(chroms, arms, method = GEOMETRY, radius = HELIX_RADIUS, height = HELIX_HEIGHT, turns = HELIX_TURNS, nuclear_radius = NUCLEAR_RADIUS, nuclear_height = NUCLEAR_HEIGHT)
+        chroms = build_chroms(arms, method = GEOMETRY, radius = HELIX_RADIUS, height = HELIX_HEIGHT, turns = HELIX_TURNS)
+
+        genome = build_genome(chroms, arms, method = GEOMETRY, radius = HELIX_RADIUS, height = HELIX_HEIGHT, turns = HELIX_TURNS, nuclear_radius = NUCLEAR_RADIUS, nuclear_height = NUCLEAR_HEIGHT)
+
+# ************************************************************************
+
+elif CHROMOSOMES in VALID_CHROMOSOMES:
+
+    chromosome = CHROMOSOMES
+    chromosome_arms = CHROMOSOME_ARMS[chromosome]
+
+    if GEOMETRY == "random_walk":
+
+        coords = build_single_chrom(arms, chromosome_arms, method="random_walk", rng=rngs[chromosome], step_size=STEP_SIZE, boundary="cylinder", cyl_radius=CYLINDER_RADIUS, cyl_height=CYLINDER_HEIGHT)
+
+        genome = {chromosome: coords}
+
+    elif GEOMETRY == "helix":
+
+        coords = build_single_chrom(arms, chromosome_arms, method="helix", radius=HELIX_RADIUS, height=HELIX_HEIGHT, turns=HELIX_TURNS)
+
+        genome = {chromosome: coords}
+
+# ************************************************************************
+
+    else:
+        raise ValueError(f"Unknown geometry method: {GEOMETRY}")
+
+# ************************************************************************
+
 
 #------------------------------------------------------
 # Writing .data file.
 #------------------------------------------------------
 if GEOMETRY == "random_walk":
-    write_data(filename = "5Oct_layout_test_rw.data", genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES, signal_names = SIGNAL_NAMES)
-elif GEOMETRY == "helix":
-    write_data(filename = "5Oct_topology_test_helix.data", genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES, signal_names = SIGNAL_NAMES)
+    filename = f"6Oct_{CHROMOSOMES}_rw.data"
+    topology_filename = f"6Oct_{CHROMOSOMES}_rw_topology.data"
 
+elif GEOMETRY == "helix":
+    filename = f"6Oct_{CHROMOSOMES}_helix.data"
+    topology_filename = f"6Oct_{CHROMOSOMES}_helix_topology.data"
+
+else:
+    raise ValueError(f"Unknown geometry method: {GEOMETRY}")
+
+
+
+write_data(filename = filename, genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES, signal_names = SIGNAL_NAMES, include_signals = True)
+
+write_data(filename = topology_filename, genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES, signal_names = SIGNAL_NAMES, include_signals = False)
