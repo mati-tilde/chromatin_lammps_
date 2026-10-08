@@ -2,14 +2,14 @@
 units		lj
 boundary	f f f
 atom_style	bond
-log		    5Oct_informed_rw_025.txt
+log		    omp_8Oct_chr2_informed_rw_025.txt
 variable	seed equal 42
 
 #--------------------------------------------------------------
 # Reading file with topology, coordinates and signals.
 
 fix signals all property/atom d2_signals 4 ghost yes
-read_data 5Oct_layout_test_rw.data fix signals NULL Signals
+read_data 6Oct_chr2_rw.data fix signals NULL Signals
 #--------------------------------------------------------------
 
 # Potential information.
@@ -19,7 +19,7 @@ neigh_modify	delay 0 every 1 check yes		# check out precise meaning.
 bond_style	harmonic
 bond_coeff	1 40.0 1.0			                # k = 40.0, r0 = 1.0 : consistent with step size = 1 for random walk
 
-pair_style	lj/episig/cut 2.5
+pair_style	lj/episig/cut/omp 2.5
 
 # Defining for_freeze group atoms.
 group for_freeze type 2
@@ -71,6 +71,6 @@ thermo_style    custom step temp pe etotal evdwl
 
 
 # dump command.
-dump	sim all custom 100 5Oct_informed_rw_025.lammpstrj id mol type x y z d2_signals[1] d2_signals[2] d2_signals[3] d2_signals[4]
+dump	sim all custom 100 omp_8Oct_chr2_rw.lammpstrj id mol type x y z d2_signals[1] d2_signals[2] d2_signals[3] d2_signals[4]
 
-run		1000
+run		10000

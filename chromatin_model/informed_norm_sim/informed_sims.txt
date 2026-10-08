@@ -1,0 +1,32 @@
+===========================================================
+INFORMED LAMMPS (pair_lj_episig_cut.cpp) TEST SIMULATIONS.
+
+NOTES:
+quick notes on the relevant lammps simulations i ran with 
+the new .cpp code. 
+files to be found in chromatin_lammps/informed_sims. 
+===========================================================
+
+1. null B elements, timestep 0.005, run: thermo 10000 run 10000 dump 100, minim: thermo 1000; works just as the original lj.
+	(1Sep_informed_rw_genome.data, 7Sep_inf_null_simulation_log.txt, 7Sep_informed_null_rw.lammpstrj)
+
+2. all equal B elements = 0.01, timestep 0.005, run: thermo 10000 run 10000 dump 100, minim: thermo 1000; CRASHED: extremely attractive energy -- B too high?
+	(1Sep_informed_rw_genome.data, crash_8Sep_inf_simulation_log.txt, crash_8Sep_informed_rw.lammpstrj)
+
+3. all equal B elements = 0.0013, timestep 0.005, run: thermo 10000 run 10000 dump 100, minim: thermo 1000; CRASHED: extremely attractive energy -- still high
+	new B elements for epsilon scale to be close to 10/20 times original lj interaction (previous: 125);
+
+4. STAT ANALYSIS: signal_stat.txt
+	highly problematic -- signals need to be rescaled/normalized;
+	extremely spread signals, meaning extremely spread scaling;
+
+	
+
+NORMALIZE THE SIGNALS:
+
+- percentile normalization not so useful (tried: 95, 90, 75 --> still extremely huge pathological tails)
+- log scaling (seems a lil better but too much dependence on the values of the B matrix -- no tails but too low percentage of modified pairs)
+
+- LOG SCALING + PERCENTILE CLIPPING:
+	stat analysis in norm_stat_analysis.txt
+	first lammps: successful 10k step MD, with B = 0.25 (see sweep in .txt) -- (1Oct_inf_norm_rw_genome.data, 1Oct_inf_norm_simulation_log.txt, 1Oct_inf_norm_rw.lammpstrj)

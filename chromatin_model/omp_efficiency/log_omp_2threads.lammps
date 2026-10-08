@@ -1,0 +1,9 @@
+LAMMPS (22 Jul 2025 - Update 4)
+  using 2 OpenMP thread(s) per MPI task
+package omp 0
+using multi-threaded neighbor list subroutines
+# Initialization.
+units		lj
+boundary	f f f
+atom_style	bond
+log		    omp_8Oct_chr2_informed_rw_025.txt

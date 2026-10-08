@@ -1,0 +1,187 @@
+variable	seed equal 42
+
+#--------------------------------------------------------------
+# Reading file with topology, coordinates and signals.
+
+fix signals all property/atom d2_signals 4 ghost yes
+read_data 1Oct_inf_norm_rw_genome.data fix signals NULL Signals
+Reading data file ...
+  orthogonal box = (-30 -30 -2) to (30 30 70)
+  1 by 1 by 1 MPI processor grid
+  reading atoms ...
+  26512 atoms
+  scanning bonds ...
+  1 = max bonds/atom
+  orthogonal box = (-30 -30 -2) to (30 30 70)
+  1 by 1 by 1 MPI processor grid
+  reading bonds ...
+  26506 bonds
+Finding 1-2 1-3 1-4 neighbors ...
+  special bond factors lj:    0        0        0       
+  special bond factors coul:  0        0        0       
+     2 = max # of 1-2 neighbors
+     2 = max # of 1-3 neighbors
+     4 = max # of 1-4 neighbors
+     6 = max # of special neighbors
+  special bonds CPU = 0.013 seconds
+  read_data CPU = 0.230 seconds
+#--------------------------------------------------------------
+
+# Potential information.
+neighbor	0.2 bin
+neigh_modify	delay 0 every 1 check yes		# check out precise meaning.
+
+bond_style	harmonic
+bond_coeff	1 40.0 1.0			                # k = 40.0, r0 = 1.0 : consistent with step size = 1 for random walk
+
+pair_style	lj/episig/cut 2.5
+
+# Defining for_freeze group atoms.
+group for_freeze type 2
+20 atoms in group for_freeze
+group rest subtract all for_freeze
+26492 atoms in group rest
+
+# Confinement.
+region		Cyl cylinder z 0 0 28 -1 69 side in
+fix		nucleus all wall/region Cyl lj126 0.15 1.0 2.5
+
+fix freeze for_freeze setforce 0.0 0.0 0.0
+
+#--------------------------------------------------------------------------------------------------------
+# Pair coefficients: both lj and B-matrix elements.
+pair_coeff	1 1  0.415  1.0      2.5                # chromosome bead w/ chromosome bead
+pair_coeff  1 2  0.425  1.0      2.5                # generic bead in the chromosome with for_freeze
+pair_coeff  2 2  0.55   1.0      2.5                # for_freeze w/ for_freeze
+
+pair_coeff B 1 1 0.25
+pair_coeff B 1 2 0.25
+pair_coeff B 1 3 0.25
+pair_coeff B 1 4 0.25
+pair_coeff B 2 2 0.25
+pair_coeff B 2 3 0.25
+pair_coeff B 2 4 0.25
+pair_coeff B 3 3 0.25
+pair_coeff B 3 4 0.25
+pair_coeff B 4 4 0.25
+#--------------------------------------------------------------------------------------------------------
+
+# Minimization.
+thermo		1000
+thermo_style	custom step temp press pe lx ly lz pxx pyy pzz
+thermo_modify   flush yes
+
+min_style	cg
+minimize	0 1.0e-9 30000 300000
+Generated 0 of 1 mixed pair_coeff terms from geometric mixing rule
+Neighbor list info ...
+  update: every = 1 steps, delay = 0 steps, check = yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 2.7
+  ghost atom cutoff = 2.7
+  binsize = 1.35, bins = 45 45 54
+  1 neighbor lists, perpetual/occasional/extra = 1 0 0
+  (1) pair lj/episig/cut, perpetual
+      attributes: half, newton on
+      pair build: half/bin/newton
+      stencil: half/bin/3d
+      bin: standard
+Per MPI rank memory allocation (min/avg/max) = 15.1 | 15.1 | 15.1 Mbytes
+   Step          Temp          Press          PotEng           Lx             Ly             Lz            Pxx            Pyy            Pzz      
+         0   0              1.6128647e+12  3.9421255e+12  60             60             72             5.6968492e+11  7.6037609e+11  3.508533e+12 
+      1000   0             -0.032238526   -6.7930865      60             60             72            -0.013374155   -0.010577959   -0.072763464  
+      2000   0             -0.019501668   -7.3837364      60             60             72            -0.0042079778  -0.0017521952  -0.052544831  
+      3000   0             -0.014420496   -7.5564559      60             60             72            -0.0029827052  -0.0014431788  -0.038835604  
+      4000   0             -0.012070223   -7.6278695      60             60             72            -0.0030750718  -0.00042378881 -0.032711808  
+      4920   0             -0.010716687   -7.657491       60             60             72            -0.0027070468  -0.00088456793 -0.028558446  
+Loop time of 524.968 on 1 procs for 4920 steps with 26512 atoms
+
+96.8% CPU use with 1 MPI tasks x 1 OpenMP threads
+
+Minimization stats:
+  Stopping criterion = linesearch alpha is zero
+  Energy initial, next-to-last, final = 
+      3942125465923.34  -7.65749101029044  -7.65749101029044
+  Force two-norm initial, final = 4.1160225e+19 14.357519
+  Force max component initial, final = 2.478884e+19 4.2339588
+  Final line search alpha, max atom move = 1.4582001e-06 6.1739591e-06
+  Iterations, force evaluations = 4920 9401
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 309.71     | 309.71     | 309.71     |   0.0 | 59.00
+Bond    | 3.3689     | 3.3689     | 3.3689     |   0.0 |  0.64
+Neigh   | 199.13     | 199.13     | 199.13     |   0.0 | 37.93
+Comm    | 0.67792    | 0.67792    | 0.67792    |   0.0 |  0.13
+Output  | 0.0018083  | 0.0018083  | 0.0018083  |   0.0 |  0.00
+Modify  | 3.7672     | 3.7672     | 3.7672     |   0.0 |  0.72
+Other   |            | 8.313      |            |       |  1.58
+
+Nlocal:          26512 ave       26512 max       26512 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Nghost:              0 ave           0 max           0 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Neighs:    1.37164e+06 ave 1.37164e+06 max 1.37164e+06 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+
+Total # of neighbors = 1371640
+Ave neighs/atom = 51.736572
+Ave special neighs/atom = 5.9972842
+Neighbor list builds = 3486
+Dangerous builds = 1364
+
+# --------------------------------------------------------------
+# Run.
+# --------------------------------------------------------------
+velocity	rest create 1.0 ${seed} rot yes dist gaussian
+velocity	rest create 1.0 42 rot yes dist gaussian
+timestep	0.005
+
+fix		    1 rest nvt temp 1.0 1.0 0.1
+
+restart		10000 old_tmp_rst new_tmp_rst
+thermo		10000
+thermo_style    custom step temp pe etotal evdwl
+WARNING: New thermo_style command, previous thermo_modify settings will be lost (src/output.cpp:912)
+
+
+# dump command.
+dump	sim all custom 100 1Oct_inf_norm_rw.lammpstrj id mol type x y z d2_signals[1] d2_signals[2] d2_signals[3] d2_signals[4]
+
+run		10000
+Generated 0 of 1 mixed pair_coeff terms from geometric mixing rule
+Per MPI rank memory allocation (min/avg/max) = 15.52 | 15.52 | 15.52 Mbytes
+   Step          Temp          PotEng         TotEng         E_vdwl    
+      4920   0.9992456     -7.657491      -6.1586792     -7.9902609    
+     10000   0.99878747    -6.8287014     -5.3305767     -7.4369557    
+     14920   1.0007369     -7.1442829     -5.6432342     -7.7619879    
+Loop time of 439.292 on 1 procs for 10000 steps with 26512 atoms
+
+Performance: 9834.004 tau/day, 22.764 timesteps/s, 603.516 katom-step/s
+96.6% CPU use with 1 MPI tasks x 1 OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 283.71     | 283.71     | 283.71     |   0.0 | 64.58
+Bond    | 2.924      | 2.924      | 2.924      |   0.0 |  0.67
+Neigh   | 137.2      | 137.2      | 137.2      |   0.0 | 31.23
+Comm    | 0.44987    | 0.44987    | 0.44987    |   0.0 |  0.10
+Output  | 4.8413     | 4.8413     | 4.8413     |   0.0 |  1.10
+Modify  | 8.9118     | 8.9118     | 8.9118     |   0.0 |  2.03
+Other   |            | 1.258      |            |       |  0.29
+
+Nlocal:          26512 ave       26512 max       26512 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Nghost:              0 ave           0 max           0 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Neighs:    1.41205e+06 ave 1.41205e+06 max 1.41205e+06 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+
+Total # of neighbors = 1412053
+Ave neighs/atom = 53.260901
+Ave special neighs/atom = 5.9972842
+Neighbor list builds = 2156
+Dangerous builds = 0
+Total wall time: 0:16:04
