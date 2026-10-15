@@ -84,15 +84,14 @@ void PairLJEpisigCutOMP::compute(int eflag, int vflag)
   int signals_index = atom->find_custom("signals", flag, cols);                     // finding the property
   //printf("signals_index = %d, flag = %d, cols = %d\n", signals_index, flag, cols);  // sanity check
   if (flag == 0) error->all(FLERR, "signals property not found");                   // error if not found
-  if (cols != 4) error->all(FLERR, "signals property must have 4 columns");         // error if not 4 columns
+  if (cols != 3) error->all(FLERR, "signals property must have 3 columns");         // error if not 3 columns
   d2_signals = atom->darray[signals_index];                                         // retrievig the signals array: d2_signals is a pointer to the 2D array of signals
   //printf("COMPUTE TEST: epsilon[1][1] = %g\n", epsilon[1][1]);
-  /*printf("internal atom 0: id = %d, signals: %g %g %g %g\n",                        // sanity check: first atom in the array, the four signals
+  /*printf("internal atom 0: id = %d, signals: %g %g %g\n",                        // sanity check: first atom in the array, the three signals
        atom->tag[0], 
        d2_signals[0][0],
        d2_signals[0][1],
-       d2_signals[0][2],
-       d2_signals[0][3]);*/
+       d2_signals[0][2]);*/
 //----------------------------------------------------------------------------------------------------
 
   // loop over neighbors of my atoms
