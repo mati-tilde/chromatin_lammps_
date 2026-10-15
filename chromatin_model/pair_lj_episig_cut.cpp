@@ -49,25 +49,25 @@ PairLJEpisigCut::PairLJEpisigCut(LAMMPS *lmp) : Pair(lmp)
   B11 = 0.00;
   B12 = 0.00;
   B13 = 0.00;
-  B14 = 0.00;
+  //B14 = 0.00;
   B22 = 0.00;
   B23 = 0.00;
-  B24 = 0.00;
+  //B24 = 0.00;
   B33 = 0.00;
-  B34 = 0.00;
-  B44 = 0.00;
+  //B34 = 0.00;
+  //B44 = 0.00;
 
   // B-matrix flags:
   B11_set = 0.00;
   B12_set = 0.00;
   B13_set = 0.00;
-  B14_set = 0.00;
+  //B14_set = 0.00;
   B22_set = 0.00;
   B23_set = 0.00;
-  B24_set = 0.00;
+  //B24_set = 0.00;
   B33_set = 0.00;
-  B34_set = 0.00;
-  B44_set = 0.00;
+  //B34_set = 0.00;
+  //B44_set = 0.00;
 
 }
 
@@ -117,10 +117,10 @@ void PairLJEpisigCut::compute(int eflag, int vflag)
   int signals_index = atom->find_custom("signals", flag, cols);                     // finding the property
   //printf("signals_index = %d, flag = %d, cols = %d\n", signals_index, flag, cols);  // sanity check
   if (flag == 0) error->all(FLERR, "signals property not found");                   // error if not found
-  if (cols != 4) error->all(FLERR, "signals property must have 4 columns");         // error if not 4 columns
+  if (cols != 3) error->all(FLERR, "signals property must have 3 columns");         // error if not 3 columns
   d2_signals = atom->darray[signals_index];                                         // retrievig the signals array: d2_signals is a pointer to the 2D array of signals
   //printf("COMPUTE TEST: epsilon[1][1] = %g\n", epsilon[1][1]);
-  /*printf("internal atom 0: id = %d, signals: %g %g %g %g\n",                        // sanity check: first atom in the array, the four signals
+  /*printf("internal atom 0: id = %d, signals: %g %g %g\n",                        // sanity check: first atom in the array, the three signals
        atom->tag[0], 
        d2_signals[0][0],
        d2_signals[0][1],
@@ -136,18 +136,25 @@ void PairLJEpisigCut::compute(int eflag, int vflag)
   // loop over neighbors of my atoms
 
   //----------------------------------------------------------------------------------------------------
-  // INTRODUCING MATRIX B -- 4x4, symmetric, numeric for now
+  // INTRODUCING MATRIX B -- nxn, symmetric, numeric for now
+  /*
   double B[4][4] = {
       {B11, B12, B13, B14},
       {B12, B22, B23, B24},
       {B13, B23, B33, B34},
       {B14, B24, B34, B44}
+  };*/
+
+  double B[3][3] = {
+      {B11, B12, B13},
+      {B12, B22, B23},
+      {B13, B23, B33}
   };
 
 
   // sanity check: ensure that B is symmetric
-  for (int i = 0; i < 4; i++) {
-    for (int j = 0; j < 4; j++) {
+  for (int i = 0; i < 3; i++) {
+    for (int j = 0; j < 3; j++) {
         if (B[i][j] != B[j][i]) {
             error->all(FLERR, "Interaction matrix B is not symmetric");
         }
@@ -182,8 +189,8 @@ void PairLJEpisigCut::compute(int eflag, int vflag)
       // introducing the interaction matrix -- computed for signals i and j
       double Sij = 0.0;
 
-      for (int alpha = 0; alpha < 4; alpha++) {
-          for (int beta = 0; beta < 4; beta++) {
+      for (int alpha = 0; alpha < 3; alpha++) {
+          for (int beta = 0; beta < 3; beta++) {
               Sij += si[alpha] * B[alpha][beta] * sj[beta];
           }
       }
@@ -565,7 +572,7 @@ void PairLJEpisigCut::coeff(int narg, char **arg)
     int I = utils::inumeric(FLERR, arg[1], false, lmp);
     int J = utils::inumeric(FLERR, arg[2], false, lmp);
 
-    if(I < 1 || I > 4 || J < 1 || J > 4){
+    if(I < 1 || I > 3 || J < 1 || J > 3){
       error->all(FLERR, "Incorrect values for signal indeces" + utils::errorurl(21));
     }
 
@@ -581,27 +588,27 @@ void PairLJEpisigCut::coeff(int narg, char **arg)
     } else if ((I == 1 && J == 3) || (I == 3 && J == 1)){
       B13 = value;
       B13_set = 1;
-    } else if ((I == 1 && J == 4) || (I == 4 && J == 1)){
+    /*} else if ((I == 1 && J == 4) || (I == 4 && J == 1)){
       B14 = value;
-      B14_set = 1;
+      B14_set = 1;*/
     } else if (I == 2 && J == 2){
       B22 = value;
       B22_set = 1;
     } else if ((I == 2 && J == 3) || (I == 3 && J == 2)){
       B23 = value;
       B23_set = 1;
-    } else if ((I == 2 && J == 4) || (I == 4 && J == 2)){
+    /*} else if ((I == 2 && J == 4) || (I == 4 && J == 2)){
       B24 = value;
-      B24_set = 1;
+      B24_set = 1;*/
     } else if (I == 3 && J == 3){
       B33 = value;
       B33_set = 1;
-    } else if ((I == 3 && J == 4) || (I == 4 && J == 3)){
+    /*} else if ((I == 3 && J == 4) || (I == 4 && J == 3)){
       B34 = value;
       B34_set = 1;
     } else if (I == 4 && J == 4){
       B44 = value;
-      B44_set = 1;
+      B44_set = 1;*/
     }
     
     printf("B[%d][%d] = %g\n", I, J, value);
@@ -645,7 +652,7 @@ void PairLJEpisigCut::coeff(int narg, char **arg)
 void PairLJEpisigCut::init_style()
 {
   //----------------------------------------------------------------------------------------------------
-  // check that all 10 independent B matrix elements have been specified:
+  // check that all 6 independent B matrix elements have been specified:
   if (!B11_set)
   error->all(FLERR, "B[1][1] has not been specified");
 
@@ -655,8 +662,8 @@ void PairLJEpisigCut::init_style()
   if (!B13_set)
     error->all(FLERR, "B[1][3] has not been specified");
 
-  if (!B14_set)
-    error->all(FLERR, "B[1][4] has not been specified");
+  //if (!B14_set)
+  // error->all(FLERR, "B[1][4] has not been specified");
 
   if (!B22_set)
     error->all(FLERR, "B[2][2] has not been specified");
@@ -664,17 +671,17 @@ void PairLJEpisigCut::init_style()
   if (!B23_set)
     error->all(FLERR, "B[2][3] has not been specified");
 
-  if (!B24_set)
-    error->all(FLERR, "B[2][4] has not been specified");
+  //if (!B24_set)
+  // error->all(FLERR, "B[2][4] has not been specified");
 
   if (!B33_set)
     error->all(FLERR, "B[3][3] has not been specified");
 
-  if (!B34_set)
-    error->all(FLERR, "B[3][4] has not been specified");
+  //if (!B34_set)
+   // error->all(FLERR, "B[3][4] has not been specified");
 
-  if (!B44_set)
-    error->all(FLERR, "B[4][4] has not been specified");
+  //if (!B44_set)
+    //error->all(FLERR, "B[4][4] has not been specified");
   //----------------------------------------------------------------------------------------------------
 
   // request regular or rRESPA neighbor list

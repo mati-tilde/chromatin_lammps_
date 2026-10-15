@@ -54,25 +54,17 @@ PairLJEpisigCutOMP::PairLJEpisigCutOMP(LAMMPS *lmp) :
   B11 = 0.00;
   B12 = 0.00;
   B13 = 0.00;
-  B14 = 0.00;
   B22 = 0.00;
   B23 = 0.00;
-  B24 = 0.00;
   B33 = 0.00;
-  B34 = 0.00;
-  B44 = 0.00;
 
   // B-matrix flags:
   B11_set = 0.00;
   B12_set = 0.00;
   B13_set = 0.00;
-  B14_set = 0.00;
   B22_set = 0.00;
   B23_set = 0.00;
-  B24_set = 0.00;
   B33_set = 0.00;
-  B34_set = 0.00;
-  B44_set = 0.00;
 
 }
 
@@ -107,17 +99,24 @@ void PairLJEpisigCutOMP::compute(int eflag, int vflag)
 
   //----------------------------------------------------------------------------------------------------
   // INTRODUCING MATRIX B -- 4x4, symmetric, numeric for now
+  /*
   double B[4][4] = {
       {B11, B12, B13, B14},
       {B12, B22, B23, B24},
       {B13, B23, B33, B34},
       {B14, B24, B34, B44}
+  };*/
+
+  double B[3][3] = {
+      {B11, B12, B13},
+      {B12, B22, B23},
+      {B13, B23, B33}
   };
 
 
   // sanity check: ensure that B is symmetric
-  for (int i = 0; i < 4; i++) {
-    for (int j = 0; j < 4; j++) {
+  for (int i = 0; i < 3; i++) {
+    for (int j = 0; j < 3; j++) {
         if (B[i][j] != B[j][i]) {
             error->all(FLERR, "Interaction matrix B is not symmetric");
         }
@@ -224,17 +223,23 @@ void PairLJEpisigCutOMP::eval(int ifrom, int ito, ThrData * const thr)
       // Sij = si^T B sj
       // ------------------------------------------------------------
 
-      const double B[4][4] = {
+      /*const double B[4][4] = {
         {B11, B12, B13, B14},
         {B12, B22, B23, B24},
         {B13, B23, B33, B34},
         {B14, B24, B34, B44}
+      };*/
+
+      const double B[3][3] = {
+        {B11, B12, B13},
+        {B12, B22, B23},
+        {B13, B23, B33}
       };
 
       double Sij = 0.0;
 
-      for (int alpha = 0; alpha < 4; ++alpha) {
-        for (int beta = 0; beta < 4; ++beta) {
+      for (int alpha = 0; alpha < 3; ++alpha) {
+        for (int beta = 0; beta < 3; ++beta) {
           Sij += si[alpha] * B[alpha][beta] * sj[beta];
         }
       }

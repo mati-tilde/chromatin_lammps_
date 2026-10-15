@@ -57,17 +57,15 @@ class PairLJEpisigCut : public Pair {
   // d2 variable to hold the signals of every Bead object:
   double **d2_signals;
 
-  // ten parameters for the 4x4 symmetric matrix B, which is used to compute the effective epsilon:
-  double B11, B12, B13, B14;
-  double B22, B23, B24;
-  double B33, B34;
-  double B44;
+  // six parameters for the 3x3 symmetric matrix B, which is used to compute the effective epsilon:
+  double B11, B12, B13;
+  double B22, B23;
+  double B33;
 
-  // ten flags to indicate whether the corresponding B-matrix element has been set or not:
-  int B11_set, B12_set, B13_set, B14_set;
-  int B22_set, B23_set, B24_set;
-  int B33_set, B34_set;
-  int B44_set;
+  // six flags to indicate whether the corresponding B-matrix element has been set or not:
+  int B11_set, B12_set, B13_set;
+  int B22_set, B23_set;
+  int B33_set;
 
   virtual void allocate();
 };

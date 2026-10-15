@@ -15,6 +15,13 @@ from genome_constants import (CHROMOSOME_ARMS, INITIAL_LAYOUT, INITIAL_LAYOUT_RW
 # Command-line arguments.
 #-------------------------------------------------------------
 
+AVAILABLE_SIGNALS = [
+    "H3K27ac",
+    "H3K9ac",
+    "H3K27me3",
+    "H3K9me3",
+]
+
 parser = argparse.ArgumentParser(description = "Build a coarse-grained Drosophila chromosome/genome geometry.")
 
 parser.add_argument("--geometry", required = True, choices = ["random_walk", "helix"], default = "random_walk", help = "Geometry generation method.")
@@ -23,11 +30,18 @@ parser.add_argument("--chromosomes", required = True, choices = ["all", "chr2", 
 
 parser.add_argument("--bed", default = "comp_HiTC_10000_WT_ST10_refined_with_chromwide.bed", help = "BED file containing the chromosome segmentation.")
 
+parser.add_argument("--remove-signals", nargs = "+", choices = AVAILABLE_SIGNALS, default = [], help = "Epigenetic marks to exclude from the output.")
+
 args = parser.parse_args()
 
 BED_FILE = args.bed
 GEOMETRY = args.geometry
 CHROMOSOMES = args.chromosomes
+SIGNAL_NAMES = [
+    signal
+    for signal in AVAILABLE_SIGNALS
+    if signal not in args.remove_signals
+]
 
 VALID_CHROMOSOMES = {"chr2", "chr3", "chrX"}
 
@@ -73,6 +87,12 @@ H3K9ME3 = EpigeneticTrack(
     "H3K9me3_WT_st10.pooled.bw"
 )
 
+SIGNAL_TRACKS = {
+    "H3K27ac": H3K27AC,
+    "H3K9ac": H3K9AC,
+    "H3K27me3": H3K27ME3,
+    "H3K9me3": H3K9ME3,
+}
 
 #---------------------------------------------------------------
 # Rng setup for random walk:
@@ -105,10 +125,8 @@ for name in rngs:
 
 beads = read_bed(BED_FILE)
 
-annotate_genome(beads, H3K27AC)
-annotate_genome(beads, H3K9AC)
-annotate_genome(beads, H3K27ME3)
-annotate_genome(beads, H3K9ME3)
+for signal_name in SIGNAL_NAMES:
+    annotate_genome(beads, SIGNAL_TRACKS[signal_name])
 
 #------------------------------------------------------
 # sanity check for annotation:
@@ -167,19 +185,25 @@ elif CHROMOSOMES in VALID_CHROMOSOMES:
 #------------------------------------------------------
 # Writing .data file.
 #------------------------------------------------------
+
+# Filename encoding the geometry and chromosome selection, as well as any removed signals.
+if args.remove_signals:
+    removed_suffix = "_without_" + "_".join(args.remove_signals)
+else:
+    removed_suffix = ""
+
 if GEOMETRY == "random_walk":
-    filename = f"6Oct_{CHROMOSOMES}_rw.data"
-    topology_filename = f"6Oct_{CHROMOSOMES}_rw_topology.data"
+    filename = f"15Oct_{CHROMOSOMES}_rw{removed_suffix}.data"
+    topology_filename = f"15Oct_{CHROMOSOMES}_rw_topology{removed_suffix}.data"
 
 elif GEOMETRY == "helix":
-    filename = f"6Oct_{CHROMOSOMES}_helix.data"
-    topology_filename = f"6Oct_{CHROMOSOMES}_helix_topology.data"
+    filename = f"15Oct_{CHROMOSOMES}_helix{removed_suffix}.data"
+    topology_filename = f"15Oct_{CHROMOSOMES}_helix_topology{removed_suffix}.data"
 
 else:
     raise ValueError(f"Unknown geometry method: {GEOMETRY}")
 
-
-
+# Writing .data file.
 write_data(filename = filename, genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES, signal_names = SIGNAL_NAMES, include_signals = True)
 
 write_data(filename = topology_filename, genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES, signal_names = SIGNAL_NAMES, include_signals = False)
