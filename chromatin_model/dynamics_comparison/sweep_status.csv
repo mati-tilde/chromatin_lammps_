@@ -1,0 +1,13 @@
+run_id,timestep,B_common,thermostat,return_code,status,thermo_rows,run_dir,error
+run_01_B0_langevin,0.005,0.0,langevin,0,success,15,/home/matilde.torresan/19Oct_sweep/results/thermostat_sweep_dt0p005_fixed/runs/run_01_B0_langevin,
+run_02_B0_nvt,0.005,0.0,nvt,0,success,15,/home/matilde.torresan/19Oct_sweep/results/thermostat_sweep_dt0p005_fixed/runs/run_02_B0_nvt,
+run_03_B0p1_langevin,0.005,0.1,langevin,0,success,15,/home/matilde.torresan/19Oct_sweep/results/thermostat_sweep_dt0p005_fixed/runs/run_03_B0p1_langevin,
+run_04_B0p1_nvt,0.005,0.1,nvt,0,success,15,/home/matilde.torresan/19Oct_sweep/results/thermostat_sweep_dt0p005_fixed/runs/run_04_B0p1_nvt,
+run_05_B0p25_langevin,0.005,0.25,langevin,0,success,16,/home/matilde.torresan/19Oct_sweep/results/thermostat_sweep_dt0p005_fixed/runs/run_05_B0p25_langevin,
+run_06_B0p25_nvt,0.005,0.25,nvt,0,success,16,/home/matilde.torresan/19Oct_sweep/results/thermostat_sweep_dt0p005_fixed/runs/run_06_B0p25_nvt,
+run_07_B0p3_langevin,0.005,0.3,langevin,0,success,16,/home/matilde.torresan/19Oct_sweep/results/thermostat_sweep_dt0p005_fixed/runs/run_07_B0p3_langevin,
+run_08_B0p3_nvt,0.005,0.3,nvt,0,success,16,/home/matilde.torresan/19Oct_sweep/results/thermostat_sweep_dt0p005_fixed/runs/run_08_B0p3_nvt,
+run_09_B0p4_langevin,0.005,0.4,langevin,0,success,16,/home/matilde.torresan/19Oct_sweep/results/thermostat_sweep_dt0p005_fixed/runs/run_09_B0p4_langevin,
+run_10_B0p4_nvt,0.005,0.4,nvt,0,success,16,/home/matilde.torresan/19Oct_sweep/results/thermostat_sweep_dt0p005_fixed/runs/run_10_B0p4_nvt,
+run_11_B0p5_langevin,0.005,0.5,langevin,0,success,16,/home/matilde.torresan/19Oct_sweep/results/thermostat_sweep_dt0p005_fixed/runs/run_11_B0p5_langevin,
+run_12_B0p5_nvt,0.005,0.5,nvt,0,success,16,/home/matilde.torresan/19Oct_sweep/results/thermostat_sweep_dt0p005_fixed/runs/run_12_B0p5_nvt,
