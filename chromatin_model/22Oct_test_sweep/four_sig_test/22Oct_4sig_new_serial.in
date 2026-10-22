@@ -1,0 +1,81 @@
+# Four-signal diagnostic sweep: serial
+
+units lj
+boundary f f f
+atom_style bond
+log 22Oct_4sig_new_serial.txt
+
+variable seed equal 42
+
+# Configure OpenMP before read_data.
+
+
+# Four per-atom signals.
+fix signals all property/atom d2_signals 4 ghost yes
+read_data 22Oct_chr2_rw.data fix signals NULL Signals
+
+# Neighbor settings.
+neighbor 0.2 bin
+neigh_modify delay 0 every 1 check yes
+
+# Bonds.
+bond_style harmonic
+bond_coeff 1 40.0 1.0
+
+# Pair style.
+pair_style lj/episig/cut 2.5
+
+# Groups.
+group for_freeze type 2
+group rest subtract all for_freeze
+
+# Confinement.
+region Cyl cylinder z 0 0 28 -1 69 side in
+fix nucleus all wall/region Cyl lj126 0.15 1.0 2.5
+fix freeze for_freeze setforce 0.0 0.0 0.0
+
+# Lennard-Jones coefficients.
+pair_coeff 1 1 0.415 1.0 2.5
+pair_coeff 1 2 0.425 1.0 2.5
+pair_coeff 2 2 0.55  1.0 2.5
+
+# Four-signal symmetric B matrix: 10 independent elements.
+pair_coeff B 1 1 0.25
+pair_coeff B 1 2 0.25
+pair_coeff B 1 3 0.25
+pair_coeff B 1 4 0.25
+pair_coeff B 2 2 0.25
+pair_coeff B 2 3 0.25
+pair_coeff B 2 4 0.25
+pair_coeff B 3 3 0.25
+pair_coeff B 3 4 0.25
+pair_coeff B 4 4 0.25
+
+# Thermodynamic output.
+thermo 100
+thermo_style custom step temp press pe etotal evdwl lx ly lz pxx pyy pzz
+thermo_modify flush yes
+
+# ------------------------------------------------------------
+# Stage 1: initial configuration, no integration.
+# ------------------------------------------------------------
+run 0
+
+# ------------------------------------------------------------
+# Stage 2: short minimization.
+# ------------------------------------------------------------
+min_style cg
+minimize 0 1.0e-9 5000 50000
+
+# ------------------------------------------------------------
+# Stage 3: short molecular dynamics run.
+# ------------------------------------------------------------
+velocity rest create 1.0 ${seed} rot yes dist gaussian
+timestep 0.01
+
+fix 1 rest nve
+fix 2 rest langevin 1.0 1.0 1.0 928374
+
+dump sim all custom 100 22Oct_4sig_new_serial.lammpstrj id mol type x y z d2_signals[1] d2_signals[2] d2_signals[3] d2_signals[4]
+
+run 1000
