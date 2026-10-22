@@ -1,0 +1,75 @@
+# OpenMP A/B case: reference
+
+units lj
+boundary f f f
+atom_style bond
+
+# Bash substitutes the thread count here before LAMMPS reads this file.
+package omp 2
+
+log new_omp_ab_reference.log
+variable seed equal 42
+
+# Three signals
+fix signals all property/atom d2_signals 3 ghost yes
+read_data 22Oct_chr2_rw_without_H3K27ac.data fix signals NULL Signals
+
+# Neighbor list and bonds
+neighbor 0.2 bin
+neigh_modify delay 0 every 1 check yes
+
+bond_style harmonic
+bond_coeff 1 40.0 1.0
+
+# OpenMP epigenetic pair style
+pair_style lj/episig/cut/omp 2.5
+
+# Groups
+group for_freeze type 2
+group rest subtract all for_freeze
+
+# Confinement and frozen atoms
+region Cyl cylinder z 0 0 28 -1 69 side in
+fix nucleus all wall/region Cyl lj126 0.15 1.0 2.5
+fix freeze for_freeze setforce 0.0 0.0 0.0
+
+# Ordinary Lennard-Jones coefficients
+pair_coeff 1 1 0.415 1.0 2.5
+pair_coeff 1 2 0.425 1.0 2.5
+pair_coeff 2 2 0.55  1.0 2.5
+
+# Three-signal B matrix
+pair_coeff B 1 1 0.25
+pair_coeff B 1 2 0.25
+pair_coeff B 1 3 0.25
+pair_coeff B 2 2 0.25
+pair_coeff B 2 3 0.25
+pair_coeff B 3 3 0.25
+
+# Thermodynamics
+thermo 1
+thermo_style custom step temp press pe etotal evdwl
+thermo_modify flush yes
+
+# Initial force and energy evaluation
+run 0
+
+# Short minimization
+min_style cg
+minimize 1.0e-6 1.0e-9 100 1000
+
+# Short molecular dynamics run
+velocity rest create 1.0 ${seed} rot yes dist gaussian
+timestep 0.01
+
+fix integrate rest nve
+fix thermostat rest langevin 1.0 1.0 1.0 928374
+
+dump trajectory all custom 10 new_omp_ab_reference.lammpstrj id type x y z
+dump_modify trajectory sort id
+
+run 20
+
+unfix thermostat
+unfix integrate
+undump trajectory

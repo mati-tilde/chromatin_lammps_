@@ -107,9 +107,6 @@ void PairLJEpisigCutOMP::compute(int eflag, int vflag)
 
     reduce_thr(this, eflag, vflag, thr);
   }
-
-  if (vflag_fdotr)
-    virial_fdotr_compute();
 }
 
 

@@ -1,0 +1,9 @@
+OpenMP A/B diagnostic
+Started: Thu 22 Oct 15:59:28 CEST 2026
+Data: 22Oct_chr2_rw_without_H3K27ac.data
+Reference executable: /home/matilde.torresan/lammps-22Jul2025/build/lmp_ref
+New executable: /home/matilde.torresan/lammps-22Jul2025/build_experiment/lmp
+OMP threads: 2
+Sequence: run 0 -> short minimize -> run 20
+COMPLETED: reference at Thu 22 Oct 15:59:29 CEST 2026
+COMPLETED: new at Thu 22 Oct 15:59:29 CEST 2026
