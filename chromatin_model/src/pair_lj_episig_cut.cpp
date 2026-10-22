@@ -1,0 +1,846 @@
+/* ----------------------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   https://www.lammps.org/, Sandia National Laboratories
+   LAMMPS development team: developers@lammps.org
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
+/* ----------------------------------------------------------------------
+   Contributing author: Paul Crozier (SNL)
+------------------------------------------------------------------------- */
+
+#include "pair_lj_episig_cut.h"
+
+#include "atom.h"
+#include "comm.h"
+#include "error.h"
+#include "force.h"
+#include "math_const.h"
+#include "memory.h"
+#include "neigh_list.h"
+#include "neighbor.h"
+#include "respa.h"
+#include "update.h"
+
+#include <cmath>
+#include <cstring>
+
+using namespace LAMMPS_NS;
+using namespace MathConst;
+
+/* ---------------------------------------------------------------------- */
+
+PairLJEpisigCut::PairLJEpisigCut(LAMMPS *lmp) : Pair(lmp)
+{
+  respa_enable = 1;
+  born_matrix_enable = 1;
+  writedata = 1;
+
+  // initializing signal-related variables:
+  d2_signals = nullptr;
+
+  // initializing B-matrix related variables:
+  nsig = 0;
+  B = nullptr;
+  signals_index = -1;
+
+}
+
+/* ---------------------------------------------------------------------- */
+
+PairLJEpisigCut::~PairLJEpisigCut()
+{
+  if (copymode) return;
+
+  // deleting B-matrix here (B-matrix is allocated in init_style() after the number of signals is known!)
+  // memory->destroy(B) does nothing to nullptr so it is safe even if B was never allocated.
+  memory->destroy(B);
+
+  if (allocated) {
+    memory->destroy(setflag);
+    memory->destroy(cutsq);
+
+    memory->destroy(cut);
+    memory->destroy(epsilon);
+    memory->destroy(sigma);
+    memory->destroy(lj1);
+    memory->destroy(lj2);
+    memory->destroy(lj3);
+    memory->destroy(lj4);
+    memory->destroy(offset);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void PairLJEpisigCut::compute(int eflag, int vflag)
+{
+  int i, j, ii, jj, inum, jnum, itype, jtype;
+  double xtmp, ytmp, ztmp, delx, dely, delz, evdwl, fpair;
+  double rsq, r2inv, r6inv, forcelj, factor_lj;
+  int *ilist, *jlist, *numneigh, **firstneigh;
+
+  evdwl = 0.0;
+  ev_init(eflag, vflag);
+
+  double **x = atom->x;
+  double **f = atom->f;
+  int *type = atom->type;
+  int nlocal = atom->nlocal;
+  double *special_lj = force->special_lj;
+  int newton_pair = force->newton_pair;
+
+  //----------------------------------------------------------------------------------------------------
+  // SIGNALS AND B MATRIX.
+  // signals_index was found in init_style(), where B (nsig x nsig) was also built and checked.
+  // The pointer itself must be refreshed at every call: LAMMPS can reallocate per-atom arrays
+  // (atoms migrating, ghost atoms changing), so a pointer cached earlier may point to freed memory.
+  d2_signals = atom->darray[signals_index];
+  const int n = nsig;
+  //----------------------------------------------------------------------------------------------------
+
+  inum = list->inum;
+  ilist = list->ilist;
+  numneigh = list->numneigh;
+  firstneigh = list->firstneigh;
+
+  // loop over neighbors of my atoms
+
+  for (ii = 0; ii < inum; ii++) {
+    i = ilist[ii];
+    xtmp = x[i][0];
+    ytmp = x[i][1];
+    ztmp = x[i][2];
+    itype = type[i];
+    jlist = firstneigh[i];
+    jnum = numneigh[i];
+
+    //----------------------------------------------------------------------------------------------------
+    // ACCESS STEP: retrieving signal vector for atom i from the 2d array d2_signals.
+    double *si = d2_signals[i];
+    //----------------------------------------------------------------------------------------------------
+
+    for (jj = 0; jj < jnum; jj++) {
+      j = jlist[jj];
+      factor_lj = special_lj[sbmask(j)];
+      j &= NEIGHMASK;
+      jtype = type[j];
+
+      //----------------------------------------------------------------------------------------------------
+      // ACCESS STEP: retrieving signal vector for atom j from the 2d array d2_signals.
+      double *sj = d2_signals[j];
+
+      // epigenetic interaction: Sij = si^T B sj, for any number n of signal channels
+      double Sij = 0.0;
+
+      for (int a = 0; a < n; a++) {
+        for (int b = 0; b < n; b++) {
+          Sij += si[a] * B[a][b] * sj[b];
+        }
+      }
+
+      double epsilon_eff = std::max(epsilon[itype][jtype], Sij);
+      double epsilon0 = epsilon[itype][jtype];
+      double eps_scale = epsilon_eff / epsilon0;
+
+      // sanity check: ensure that eps_scale is finite
+      if (!std::isfinite(eps_scale)) {
+        error->all(FLERR, "Non-finite epsilon scaling encountered");
+      }
+
+      static int printed_interaction = 0;
+
+      if (printed_interaction == 0) {
+        printf("INTERACTION CHECK: i=%d j=%d itype=%d jtype=%d "
+               "Sij=%g epsilon0=%g epsilon_eff=%g\n",
+               atom->tag[i], atom->tag[j],
+               itype, jtype,
+               Sij, epsilon0, epsilon_eff);
+
+        printed_interaction = 1;
+      }
+      //----------------------------------------------------------------------------------------------------
+
+      delx = xtmp - x[j][0];
+      dely = ytmp - x[j][1];
+      delz = ztmp - x[j][2];
+      rsq = delx * delx + dely * dely + delz * delz;
+
+      if (rsq < cutsq[itype][jtype]) {
+        r2inv = 1.0 / rsq;
+        r6inv = r2inv * r2inv * r2inv;
+        //--------------------------------------------------------------------------------------------
+        // RESCALING THE FORCE by a factor epsilon_eff/epsilon_0; leaves sigma unchanged, but not the well depth.
+        forcelj = r6inv * (lj1[itype][jtype] * eps_scale * r6inv - lj2[itype][jtype] * eps_scale);
+        fpair = factor_lj * forcelj * r2inv;
+        //--------------------------------------------------------------------------------------------
+
+        f[i][0] += delx * fpair;
+        f[i][1] += dely * fpair;
+        f[i][2] += delz * fpair;
+        if (newton_pair || j < nlocal) {
+          f[j][0] -= delx * fpair;
+          f[j][1] -= dely * fpair;
+          f[j][2] -= delz * fpair;
+        }
+
+        //---------------------------------------------------------------------------------------------------------------
+        // RESCALING THE ENERGY FACTOR (NOT THE OFFSET):
+        if (eflag) {
+          evdwl = r6inv * (lj3[itype][jtype] * eps_scale * r6inv - lj4[itype][jtype] * eps_scale) - offset[itype][jtype];
+          evdwl *= factor_lj;
+        }
+        //---------------------------------------------------------------------------------------------------------------
+        if (evflag) ev_tally(i, j, nlocal, newton_pair, evdwl, 0.0, fpair, delx, dely, delz);
+      }
+    }
+  }
+
+  if (vflag_fdotr) virial_fdotr_compute();
+}
+
+/* ---------------------------------------------------------------------- */
+
+void PairLJEpisigCut::compute_inner()
+{
+  int i, j, ii, jj, inum, jnum, itype, jtype;
+  double xtmp, ytmp, ztmp, delx, dely, delz, fpair;
+  double rsq, r2inv, r6inv, forcelj, factor_lj, rsw;
+  int *ilist, *jlist, *numneigh, **firstneigh;
+
+  double **x = atom->x;
+  double **f = atom->f;
+  int *type = atom->type;
+  int nlocal = atom->nlocal;
+  double *special_lj = force->special_lj;
+  int newton_pair = force->newton_pair;
+
+  inum = list->inum_inner;
+  ilist = list->ilist_inner;
+  numneigh = list->numneigh_inner;
+  firstneigh = list->firstneigh_inner;
+
+  double cut_out_on = cut_respa[0];
+  double cut_out_off = cut_respa[1];
+
+  double cut_out_diff = cut_out_off - cut_out_on;
+  double cut_out_on_sq = cut_out_on * cut_out_on;
+  double cut_out_off_sq = cut_out_off * cut_out_off;
+
+  // loop over neighbors of my atoms
+
+  for (ii = 0; ii < inum; ii++) {
+    i = ilist[ii];
+    xtmp = x[i][0];
+    ytmp = x[i][1];
+    ztmp = x[i][2];
+    itype = type[i];
+    jlist = firstneigh[i];
+    jnum = numneigh[i];
+
+    for (jj = 0; jj < jnum; jj++) {
+      j = jlist[jj];
+      factor_lj = special_lj[sbmask(j)];
+      j &= NEIGHMASK;
+
+      delx = xtmp - x[j][0];
+      dely = ytmp - x[j][1];
+      delz = ztmp - x[j][2];
+      rsq = delx * delx + dely * dely + delz * delz;
+
+      if (rsq < cut_out_off_sq) {
+        r2inv = 1.0 / rsq;
+        r6inv = r2inv * r2inv * r2inv;
+        jtype = type[j];
+        forcelj = r6inv * (lj1[itype][jtype] * r6inv - lj2[itype][jtype]);
+        fpair = factor_lj * forcelj * r2inv;
+        if (rsq > cut_out_on_sq) {
+          rsw = (sqrt(rsq) - cut_out_on) / cut_out_diff;
+          fpair *= 1.0 - rsw * rsw * (3.0 - 2.0 * rsw);
+        }
+
+        f[i][0] += delx * fpair;
+        f[i][1] += dely * fpair;
+        f[i][2] += delz * fpair;
+        if (newton_pair || j < nlocal) {
+          f[j][0] -= delx * fpair;
+          f[j][1] -= dely * fpair;
+          f[j][2] -= delz * fpair;
+        }
+      }
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void PairLJEpisigCut::compute_middle()
+{
+  int i, j, ii, jj, inum, jnum, itype, jtype;
+  double xtmp, ytmp, ztmp, delx, dely, delz, fpair;
+  double rsq, r2inv, r6inv, forcelj, factor_lj, rsw;
+  int *ilist, *jlist, *numneigh, **firstneigh;
+
+  double **x = atom->x;
+  double **f = atom->f;
+  int *type = atom->type;
+  int nlocal = atom->nlocal;
+  double *special_lj = force->special_lj;
+  int newton_pair = force->newton_pair;
+
+  inum = list->inum_middle;
+  ilist = list->ilist_middle;
+  numneigh = list->numneigh_middle;
+  firstneigh = list->firstneigh_middle;
+
+  double cut_in_off = cut_respa[0];
+  double cut_in_on = cut_respa[1];
+  double cut_out_on = cut_respa[2];
+  double cut_out_off = cut_respa[3];
+
+  double cut_in_diff = cut_in_on - cut_in_off;
+  double cut_out_diff = cut_out_off - cut_out_on;
+  double cut_in_off_sq = cut_in_off * cut_in_off;
+  double cut_in_on_sq = cut_in_on * cut_in_on;
+  double cut_out_on_sq = cut_out_on * cut_out_on;
+  double cut_out_off_sq = cut_out_off * cut_out_off;
+
+  // loop over neighbors of my atoms
+
+  for (ii = 0; ii < inum; ii++) {
+    i = ilist[ii];
+    xtmp = x[i][0];
+    ytmp = x[i][1];
+    ztmp = x[i][2];
+    itype = type[i];
+    jlist = firstneigh[i];
+    jnum = numneigh[i];
+
+    for (jj = 0; jj < jnum; jj++) {
+      j = jlist[jj];
+      factor_lj = special_lj[sbmask(j)];
+      j &= NEIGHMASK;
+
+      delx = xtmp - x[j][0];
+      dely = ytmp - x[j][1];
+      delz = ztmp - x[j][2];
+      rsq = delx * delx + dely * dely + delz * delz;
+
+      if (rsq < cut_out_off_sq && rsq > cut_in_off_sq) {
+        r2inv = 1.0 / rsq;
+        r6inv = r2inv * r2inv * r2inv;
+        jtype = type[j];
+        forcelj = r6inv * (lj1[itype][jtype] * r6inv - lj2[itype][jtype]);
+        fpair = factor_lj * forcelj * r2inv;
+        if (rsq < cut_in_on_sq) {
+          rsw = (sqrt(rsq) - cut_in_off) / cut_in_diff;
+          fpair *= rsw * rsw * (3.0 - 2.0 * rsw);
+        }
+        if (rsq > cut_out_on_sq) {
+          rsw = (sqrt(rsq) - cut_out_on) / cut_out_diff;
+          fpair *= 1.0 + rsw * rsw * (2.0 * rsw - 3.0);
+        }
+
+        f[i][0] += delx * fpair;
+        f[i][1] += dely * fpair;
+        f[i][2] += delz * fpair;
+        if (newton_pair || j < nlocal) {
+          f[j][0] -= delx * fpair;
+          f[j][1] -= dely * fpair;
+          f[j][2] -= delz * fpair;
+        }
+      }
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void PairLJEpisigCut::compute_outer(int eflag, int vflag)
+{
+  int i, j, ii, jj, inum, jnum, itype, jtype;
+  double xtmp, ytmp, ztmp, delx, dely, delz, evdwl, fpair;
+  double rsq, r2inv, r6inv, forcelj, factor_lj, rsw;
+  int *ilist, *jlist, *numneigh, **firstneigh;
+
+  evdwl = 0.0;
+  ev_init(eflag, vflag);
+
+  double **x = atom->x;
+  double **f = atom->f;
+  int *type = atom->type;
+  int nlocal = atom->nlocal;
+  double *special_lj = force->special_lj;
+  int newton_pair = force->newton_pair;
+
+  inum = list->inum;
+  ilist = list->ilist;
+  numneigh = list->numneigh;
+  firstneigh = list->firstneigh;
+
+  double cut_in_off = cut_respa[2];
+  double cut_in_on = cut_respa[3];
+
+  double cut_in_diff = cut_in_on - cut_in_off;
+  double cut_in_off_sq = cut_in_off * cut_in_off;
+  double cut_in_on_sq = cut_in_on * cut_in_on;
+
+  // loop over neighbors of my atoms
+
+  for (ii = 0; ii < inum; ii++) {
+    i = ilist[ii];
+    xtmp = x[i][0];
+    ytmp = x[i][1];
+    ztmp = x[i][2];
+    itype = type[i];
+    jlist = firstneigh[i];
+    jnum = numneigh[i];
+
+    for (jj = 0; jj < jnum; jj++) {
+      j = jlist[jj];
+      factor_lj = special_lj[sbmask(j)];
+      j &= NEIGHMASK;
+
+      delx = xtmp - x[j][0];
+      dely = ytmp - x[j][1];
+      delz = ztmp - x[j][2];
+      rsq = delx * delx + dely * dely + delz * delz;
+      jtype = type[j];
+
+      if (rsq < cutsq[itype][jtype]) {
+        if (rsq > cut_in_off_sq) {
+          r2inv = 1.0 / rsq;
+          r6inv = r2inv * r2inv * r2inv;
+          forcelj = r6inv * (lj1[itype][jtype] * r6inv - lj2[itype][jtype]);
+          fpair = factor_lj * forcelj * r2inv;
+          if (rsq < cut_in_on_sq) {
+            rsw = (sqrt(rsq) - cut_in_off) / cut_in_diff;
+            fpair *= rsw * rsw * (3.0 - 2.0 * rsw);
+          }
+
+          f[i][0] += delx * fpair;
+          f[i][1] += dely * fpair;
+          f[i][2] += delz * fpair;
+          if (newton_pair || j < nlocal) {
+            f[j][0] -= delx * fpair;
+            f[j][1] -= dely * fpair;
+            f[j][2] -= delz * fpair;
+          }
+        }
+
+        if (eflag) {
+          r2inv = 1.0 / rsq;
+          r6inv = r2inv * r2inv * r2inv;
+          evdwl = r6inv * (lj3[itype][jtype] * r6inv - lj4[itype][jtype]) - offset[itype][jtype];
+          evdwl *= factor_lj;
+        }
+
+        if (vflag) {
+          if (rsq <= cut_in_off_sq) {
+            r2inv = 1.0 / rsq;
+            r6inv = r2inv * r2inv * r2inv;
+            forcelj = r6inv * (lj1[itype][jtype] * r6inv - lj2[itype][jtype]);
+            fpair = factor_lj * forcelj * r2inv;
+          } else if (rsq < cut_in_on_sq)
+            fpair = factor_lj * forcelj * r2inv;
+        }
+
+        if (evflag) ev_tally(i, j, nlocal, newton_pair, evdwl, 0.0, fpair, delx, dely, delz);
+      }
+    }
+  }
+}
+
+/* ----------------------------------------------------------------------
+   allocate all arrays
+------------------------------------------------------------------------- */
+
+void PairLJEpisigCut::allocate()
+{
+  allocated = 1;
+  int n = atom->ntypes + 1;
+
+  memory->create(setflag, n, n, "pair:setflag");
+  for (int i = 1; i < n; i++)
+    for (int j = i; j < n; j++) setflag[i][j] = 0;
+
+  memory->create(cutsq, n, n, "pair:cutsq");
+
+  memory->create(cut, n, n, "pair:cut");
+  memory->create(epsilon, n, n, "pair:epsilon");
+  memory->create(sigma, n, n, "pair:sigma");
+  memory->create(lj1, n, n, "pair:lj1");
+  memory->create(lj2, n, n, "pair:lj2");
+  memory->create(lj3, n, n, "pair:lj3");
+  memory->create(lj4, n, n, "pair:lj4");
+  memory->create(offset, n, n, "pair:offset");
+}
+
+/* ----------------------------------------------------------------------
+   global settings
+------------------------------------------------------------------------- */
+
+void PairLJEpisigCut::settings(int narg, char **arg)
+{
+  if (narg != 1) error->all(FLERR, "Illegal pair_style command");
+
+  cut_global = utils::numeric(FLERR, arg[0], false, lmp);
+
+  // reset cutoffs that have been explicitly set
+
+  if (allocated) {
+    int i, j;
+    for (i = 1; i <= atom->ntypes; i++)
+      for (j = i; j <= atom->ntypes; j++)
+        if (setflag[i][j]) cut[i][j] = cut_global;
+  }
+}
+
+/* ----------------------------------------------------------------------
+   set coeffs for one or more type pairs
+------------------------------------------------------------------------- */
+//------------------------------------------------------------------------------------------------------
+// MODIFYING THE FUNCTION TO ACCEPT THE TEN B PARAMETERS AS WELL.
+void PairLJEpisigCut::coeff(int narg, char **arg)
+{
+  // allocate() should open anyways.
+  if (!allocated) allocate();
+
+  // dividing the analysis of pair_coeff on the basis of first arg:
+  // 1. FOR B MATRIX: 
+  if (strcmp(arg[0], "B") == 0) {
+    if (narg != 4) error->all(FLERR, "Incorrect args for B-matrix pair coefficients");
+
+    int I = utils::inumeric(FLERR, arg[1], false, lmp);
+    int J = utils::inumeric(FLERR, arg[2], false, lmp);
+    if (I < 1 || J < 1) error->all(FLERR, "B-matrix indices must be >= 1");
+
+    double value = utils::numeric(FLERR, arg[3], false, lmp);
+
+    // store only the upper triangle: (I,J) and (J,I) are the same element
+    B_input[std::make_pair(MIN(I, J), MAX(I, J))] = value;
+    return;
+  } else {
+    // 2. FOR REGULAR LJ COEFFICIENTS: 
+    if (narg < 4 || narg > 5) error->all(FLERR, "Incorrect args for pair coefficients" + utils::errorurl(21));
+
+    int ilo, ihi, jlo, jhi;
+    utils::bounds(FLERR, arg[0], 1, atom->ntypes, ilo, ihi, error);
+    utils::bounds(FLERR, arg[1], 1, atom->ntypes, jlo, jhi, error);
+
+    double epsilon_one = utils::numeric(FLERR, arg[2], false, lmp);
+    double sigma_one = utils::numeric(FLERR, arg[3], false, lmp);
+
+    double cut_one = cut_global;
+    if (narg == 5) cut_one = utils::numeric(FLERR, arg[4], false, lmp);
+
+    int count = 0;
+    for (int i = ilo; i <= ihi; i++) {
+      for (int j = MAX(jlo, i); j <= jhi; j++) {
+        epsilon[i][j] = epsilon_one;
+        sigma[i][j] = sigma_one;
+        cut[i][j] = cut_one;
+        setflag[i][j] = 1;
+        count++;
+      }
+    }
+
+    if (count == 0)
+     error->all(FLERR, "Incorrect args for pair coefficients" + utils::errorurl(21));
+
+  }  
+}
+//------------------------------------------------------------------------------------------------------
+
+/* ----------------------------------------------------------------------
+   init specific to this pair style
+------------------------------------------------------------------------- */
+
+void PairLJEpisigCut::init_style()
+{
+  // here we actually compute the B matrix: first time we have all the B entries (== nsig).
+  // 1. number of channels = largest index used in "pair_coeff B I J value".
+  int n = 0;
+  for (const auto &entry : B_input) n = MAX(n, entry.first.second);
+  if (n == 0) error->all(FLERR, "No B-matrix elements given (pair_coeff B I J value)");
+
+  // 2. a symmetric n x n matrix has n(n+1)/2 independent elements; all must be given.
+  int nexpected = n * (n + 1) / 2;
+  if ((int) B_input.size() != nexpected)
+    error->all(FLERR, "B matrix: {} independent elements given, but largest index {} requires {}",
+               B_input.size(), n, nexpected);
+
+  // 3. the per-atom signals must have exactly n columns.
+  int flag, cols;
+  signals_index = atom->find_custom("signals", flag, cols);
+  if (signals_index < 0 || flag != 1)
+    error->all(FLERR, "Pair lj/episig/cut requires fix property/atom d2_signals");
+  if (cols != n)
+    error->all(FLERR, "B matrix is {}x{} but the signals property has {} columns", n, n, cols);
+
+  // 4. build the full symmetric matrix (0-based indices).
+  // note: because init_style() runs at every run/minimize, 
+  // you can change B between two run commands in the same input file, handy for sweeps.
+  memory->destroy(B);
+  nsig = n;
+  memory->create(B, nsig, nsig, "pair:B");
+  for (const auto &entry : B_input) {
+    int a = entry.first.first - 1;
+    int b = entry.first.second - 1;
+    B[a][b] = B[b][a] = entry.second;
+  }
+
+  // 5. echo the matrix to screen and log file (rank 0 only).
+  if (comm->me == 0) {
+    utils::logmesg(lmp, "lj/episig/cut: {} signal channels, B matrix:\n", nsig);
+    for (int a = 0; a < nsig; a++) {
+      for (int b = 0; b < nsig; b++) utils::logmesg(lmp, "{:12.6g}", B[a][b]);
+      utils::logmesg(lmp, "\n");
+    }
+  }
+  //----------------------------------------------------------------------------------------------------
+
+  // request regular or rRESPA neighbor list
+
+  int list_style = NeighConst::REQ_DEFAULT;
+
+  if (update->whichflag == 1 && utils::strmatch(update->integrate_style, "^respa")) {
+    auto *respa = dynamic_cast<Respa *>(update->integrate);
+    if (respa->level_inner >= 0) list_style = NeighConst::REQ_RESPA_INOUT;
+    if (respa->level_middle >= 0) list_style = NeighConst::REQ_RESPA_ALL;
+  }
+  neighbor->add_request(this, list_style);
+
+  // set rRESPA cutoffs
+
+  if (utils::strmatch(update->integrate_style, "^respa") &&
+      (dynamic_cast<Respa *>(update->integrate))->level_inner >= 0)
+    cut_respa = (dynamic_cast<Respa *>(update->integrate))->cutoff;
+  else
+    cut_respa = nullptr;
+}
+
+/* ----------------------------------------------------------------------
+   init for one type pair i,j and corresponding j,i
+------------------------------------------------------------------------- */
+
+double PairLJEpisigCut::init_one(int i, int j)
+{
+    //printf("INIT_ONE: i=%d j=%d setflag=%d epsilon=%g\n",
+      //   i, j, setflag[i][j], epsilon[i][j]);
+
+  if (setflag[i][j] == 0) {
+    epsilon[i][j] = mix_energy(epsilon[i][i], epsilon[j][j], sigma[i][i], sigma[j][j]);
+    sigma[i][j] = mix_distance(sigma[i][i], sigma[j][j]);
+    cut[i][j] = mix_distance(cut[i][i], cut[j][j]);
+  }
+
+  lj1[i][j] = 48.0 * epsilon[i][j] * pow(sigma[i][j], 12.0);
+  lj2[i][j] = 24.0 * epsilon[i][j] * pow(sigma[i][j], 6.0);
+  lj3[i][j] = 4.0 * epsilon[i][j] * pow(sigma[i][j], 12.0);
+  lj4[i][j] = 4.0 * epsilon[i][j] * pow(sigma[i][j], 6.0);
+
+  if (offset_flag && (cut[i][j] > 0.0)) {
+    double ratio = sigma[i][j] / cut[i][j];
+    offset[i][j] = 4.0 * epsilon[i][j] * (pow(ratio, 12.0) - pow(ratio, 6.0));
+  } else
+    offset[i][j] = 0.0;
+
+  lj1[j][i] = lj1[i][j];
+  lj2[j][i] = lj2[i][j];
+  lj3[j][i] = lj3[i][j];
+  lj4[j][i] = lj4[i][j];
+  offset[j][i] = offset[i][j];
+
+  //----------------------------------------------------------------------------------------------------
+  // computing the lower matrix as well to avoid -Nan in fpair -- pair_coeff inverted types go undefined
+  epsilon[j][i] = epsilon[i][j];
+  sigma[j][i] = sigma[i][j];
+  cut[j][i] = cut[i][j];
+  //----------------------------------------------------------------------------------------------------
+
+  // check interior rRESPA cutoff
+
+  if (cut_respa && cut[i][j] < cut_respa[3])
+    error->all(FLERR, "Pair cutoff < Respa interior cutoff");
+
+  // compute I,J contribution to long-range tail correction
+  // count total # of atoms of type I and J via Allreduce
+
+  if (tail_flag) {
+    int *type = atom->type;
+    int nlocal = atom->nlocal;
+
+    double count[2], all[2];
+    count[0] = count[1] = 0.0;
+    for (int k = 0; k < nlocal; k++) {
+      if (type[k] == i) count[0] += 1.0;
+      if (type[k] == j) count[1] += 1.0;
+    }
+    MPI_Allreduce(count, all, 2, MPI_DOUBLE, MPI_SUM, world);
+
+    double sig2 = sigma[i][j] * sigma[i][j];
+    double sig6 = sig2 * sig2 * sig2;
+    double rc3 = cut[i][j] * cut[i][j] * cut[i][j];
+    double rc6 = rc3 * rc3;
+    double rc9 = rc3 * rc6;
+    double prefactor = 8.0 * MY_PI * all[0] * all[1] * epsilon[i][j] * sig6 / (9.0 * rc9);
+    etail_ij = prefactor * (sig6 - 3.0 * rc6);
+    ptail_ij = 2.0 * prefactor * (2.0 * sig6 - 3.0 * rc6);
+  }
+
+  return cut[i][j];
+}
+
+/* ----------------------------------------------------------------------
+   proc 0 writes to restart file
+------------------------------------------------------------------------- */
+
+void PairLJEpisigCut::write_restart(FILE *fp)
+{
+  write_restart_settings(fp);
+
+  int i, j;
+  for (i = 1; i <= atom->ntypes; i++)
+    for (j = i; j <= atom->ntypes; j++) {
+      fwrite(&setflag[i][j], sizeof(int), 1, fp);
+      if (setflag[i][j]) {
+        fwrite(&epsilon[i][j], sizeof(double), 1, fp);
+        fwrite(&sigma[i][j], sizeof(double), 1, fp);
+        fwrite(&cut[i][j], sizeof(double), 1, fp);
+      }
+    }
+}
+
+/* ----------------------------------------------------------------------
+   proc 0 reads from restart file, bcasts
+------------------------------------------------------------------------- */
+
+void PairLJEpisigCut::read_restart(FILE *fp)
+{
+  read_restart_settings(fp);
+  allocate();
+
+  int i, j;
+  int me = comm->me;
+  for (i = 1; i <= atom->ntypes; i++)
+    for (j = i; j <= atom->ntypes; j++) {
+      if (me == 0) utils::sfread(FLERR, &setflag[i][j], sizeof(int), 1, fp, nullptr, error);
+      MPI_Bcast(&setflag[i][j], 1, MPI_INT, 0, world);
+      if (setflag[i][j]) {
+        if (me == 0) {
+          utils::sfread(FLERR, &epsilon[i][j], sizeof(double), 1, fp, nullptr, error);
+          utils::sfread(FLERR, &sigma[i][j], sizeof(double), 1, fp, nullptr, error);
+          utils::sfread(FLERR, &cut[i][j], sizeof(double), 1, fp, nullptr, error);
+        }
+        MPI_Bcast(&epsilon[i][j], 1, MPI_DOUBLE, 0, world);
+        MPI_Bcast(&sigma[i][j], 1, MPI_DOUBLE, 0, world);
+        MPI_Bcast(&cut[i][j], 1, MPI_DOUBLE, 0, world);
+      }
+    }
+}
+
+/* ----------------------------------------------------------------------
+   proc 0 writes to restart file
+------------------------------------------------------------------------- */
+
+void PairLJEpisigCut::write_restart_settings(FILE *fp)
+{
+  fwrite(&cut_global, sizeof(double), 1, fp);
+  fwrite(&offset_flag, sizeof(int), 1, fp);
+  fwrite(&mix_flag, sizeof(int), 1, fp);
+  fwrite(&tail_flag, sizeof(int), 1, fp);
+}
+
+/* ----------------------------------------------------------------------
+   proc 0 reads from restart file, bcasts
+------------------------------------------------------------------------- */
+
+void PairLJEpisigCut::read_restart_settings(FILE *fp)
+{
+  int me = comm->me;
+  if (me == 0) {
+    utils::sfread(FLERR, &cut_global, sizeof(double), 1, fp, nullptr, error);
+    utils::sfread(FLERR, &offset_flag, sizeof(int), 1, fp, nullptr, error);
+    utils::sfread(FLERR, &mix_flag, sizeof(int), 1, fp, nullptr, error);
+    utils::sfread(FLERR, &tail_flag, sizeof(int), 1, fp, nullptr, error);
+  }
+  MPI_Bcast(&cut_global, 1, MPI_DOUBLE, 0, world);
+  MPI_Bcast(&offset_flag, 1, MPI_INT, 0, world);
+  MPI_Bcast(&mix_flag, 1, MPI_INT, 0, world);
+  MPI_Bcast(&tail_flag, 1, MPI_INT, 0, world);
+}
+
+/* ----------------------------------------------------------------------
+   proc 0 writes to data file
+------------------------------------------------------------------------- */
+
+void PairLJEpisigCut::write_data(FILE *fp)
+{
+  for (int i = 1; i <= atom->ntypes; i++) fprintf(fp, "%d %g %g\n", i, epsilon[i][i], sigma[i][i]);
+}
+
+/* ----------------------------------------------------------------------
+   proc 0 writes all pairs to data file
+------------------------------------------------------------------------- */
+
+void PairLJEpisigCut::write_data_all(FILE *fp)
+{
+  for (int i = 1; i <= atom->ntypes; i++)
+    for (int j = i; j <= atom->ntypes; j++)
+      fprintf(fp, "%d %d %g %g %g\n", i, j, epsilon[i][j], sigma[i][j], cut[i][j]);
+}
+
+/* ---------------------------------------------------------------------- */
+
+double PairLJEpisigCut::single(int /*i*/, int /*j*/, int itype, int jtype, double rsq,
+                         double /*factor_coul*/, double factor_lj, double &fforce)
+{
+  double r2inv, r6inv, forcelj, philj;
+
+  r2inv = 1.0 / rsq;
+  r6inv = r2inv * r2inv * r2inv;
+  forcelj = r6inv * (lj1[itype][jtype] * r6inv - lj2[itype][jtype]);
+  fforce = factor_lj * forcelj * r2inv;
+
+  philj = r6inv * (lj3[itype][jtype] * r6inv - lj4[itype][jtype]) - offset[itype][jtype];
+  return factor_lj * philj;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void PairLJEpisigCut::born_matrix(int /*i*/, int /*j*/, int itype, int jtype, double rsq,
+                            double /*factor_coul*/, double factor_lj, double &dupair,
+                            double &du2pair)
+{
+  double rinv, r2inv, r6inv, du, du2;
+
+  r2inv = 1.0 / rsq;
+  rinv = sqrt(r2inv);
+  r6inv = r2inv * r2inv * r2inv;
+
+  // Reminder: lj1 = 48*e*s^12, lj2 = 24*e*s^6
+  // so dupair = -forcelj/r = -fforce*r (forcelj from single method)
+
+  du = r6inv * rinv * (lj2[itype][jtype] - lj1[itype][jtype] * r6inv);
+  du2 = r6inv * r2inv * (13 * lj1[itype][jtype] * r6inv - 7 * lj2[itype][jtype]);
+
+  dupair = factor_lj * du;
+  du2pair = factor_lj * du2;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void *PairLJEpisigCut::extract(const char *str, int &dim)
+{
+  dim = 2;
+  if (strcmp(str, "epsilon") == 0) return (void *) epsilon;
+  if (strcmp(str, "sigma") == 0) return (void *) sigma;
+  return nullptr;
+}
