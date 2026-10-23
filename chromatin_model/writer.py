@@ -1,5 +1,10 @@
 import numpy as np
 import argparse
+import signal
+import sys
+import time
+from datetime import date
+from pathlib import Path
 
 from genome_parser import read_bed
 from constrained_builder import split_by_arms, build_chroms, build_genome, build_single_chrom
@@ -28,9 +33,19 @@ parser.add_argument("--geometry", required = True, choices = ["random_walk", "he
 
 parser.add_argument("--chromosomes", required = True, choices = ["all", "chr2", "chr3", "chrX"], default = "all", help = "Chromosome to generate, or 'all' for the full genome.")
 
+parser.add_argument("--seed", default = "42", help = "Master seed for the random-walk geometry (default: 42). If it gets stuck, seed+1, seed+2, ... are tried.")
+
 parser.add_argument("--bed", default = "comp_HiTC_10000_WT_ST10_refined_with_chromwide.bed", help = "BED file containing the chromosome segmentation.")
 
 parser.add_argument("--remove-signals", nargs = "+", choices = AVAILABLE_SIGNALS, default = [], help = "Epigenetic marks to exclude from the output.")
+
+parser.add_argument("--output", default = None, help = "Output .data file with signals. Default: <date>_<chromosomes>_<geometry>_seed<seed>[_without_...].data")
+
+parser.add_argument("--topology-output", default = None, help = "Output .data file without signals. Default: the --output name with '_topology' added before '.data'.")
+
+parser.add_argument("--attempt-timeout", type = float, default = 60.0, help = "Maximum time in seconds for one geometry attempt (default: 60).")
+
+parser.add_argument("--total-timeout", type = float, default = 300.0, help = "Maximum total time in seconds over all attempts; after that, abort without writing files (default: 300).")
 
 args = parser.parse_args()
 
@@ -56,7 +71,9 @@ HELIX_TURNS = 50
 
 # for random walk:
 STEP_SIZE = 1.0
-SEED = 42
+
+# Timeout for the generation of the geometry (in seconds):
+GENERATION_TIMEOUT = 180 
 
 # cylinder boundary (for random walk only):
 CYLINDER_RADIUS = 8.0
@@ -100,24 +117,17 @@ SIGNAL_TRACKS = {
 # Independent random-number generators for each chromosome copy.
 #---------------------------------------------------------------
 
-MASTER_SEED = np.random.SeedSequence(SEED)
-
 if CHROMOSOMES == "all":
     COPY_NAMES = ["chr2A", "chr2B", "chr3A", "chr3B", "chrXA", "chrXB"]
 else:
     COPY_NAMES = [CHROMOSOMES]
 
-child_sequences = MASTER_SEED.spawn(len(COPY_NAMES))
-
-rngs = {
-    name: np.random.default_rng(seed_sequence)
-    for name, seed_sequence in zip(COPY_NAMES, child_sequences)
-}
-
-
-print("Available RNGs:")
-for name in rngs:
-    print(f"  {name}")
+# One independent generator per chromosome copy, all derived from a single master seed.
+# Subsequent seeds give completely unrelated random streams, so if one seed gets stuck, we can try the next one.
+def make_rngs(seed, copy_names):
+    master = np.random.SeedSequence(seed)
+    children = master.spawn(len(copy_names))
+    return {name: np.random.default_rng(s) for name, s in zip(copy_names, children)}
 
 #------------------------------------------------------
 # Building annotated genome.
@@ -128,58 +138,100 @@ beads = read_bed(BED_FILE)
 for signal_name in SIGNAL_NAMES:
     annotate_genome(beads, SIGNAL_TRACKS[signal_name])
 
-#------------------------------------------------------
-# sanity check for annotation:
-# print("\nExample bead signals:")
-# print(beads[0].signals)
-#------------------------------------------------------
-
 arms = split_by_arms(beads)
 
 #-------------------------------------------------------------------------
 # Building genome accordingly to chosen geometry and chromosome selection.
 #-------------------------------------------------------------------------
 
-# ****************************************************************************************
-if CHROMOSOMES == "all":
+# Build the coordinates for the selected chromosomes; returns the genome dictionary.
+def build_geometry(rngs):
 
-    if GEOMETRY == "random_walk":
+    if CHROMOSOMES == "all":
 
-        chroms = build_chroms(arms, method = GEOMETRY, step_size = STEP_SIZE, rngs = rngs, boundary = "cylinder", cyl_radius = CYLINDER_RADIUS, cyl_height = CYLINDER_HEIGHT)
+        if GEOMETRY == "random_walk":
 
-        genome = build_genome(chroms, arms, method = GEOMETRY, step_size = STEP_SIZE, rngs = rngs, boundary = "cylinder", cyl_radius = CYLINDER_RADIUS, cyl_height = CYLINDER_HEIGHT, nuclear_radius = NUCLEAR_RADIUS, nuclear_height = NUCLEAR_HEIGHT)
+            chroms = build_chroms(arms, method = GEOMETRY, step_size = STEP_SIZE, rngs = rngs, boundary = "cylinder", cyl_radius = CYLINDER_RADIUS, cyl_height = CYLINDER_HEIGHT)
 
-    elif GEOMETRY == "helix":
+            return build_genome(chroms, arms, method = GEOMETRY, step_size = STEP_SIZE, rngs = rngs, boundary = "cylinder", cyl_radius = CYLINDER_RADIUS, cyl_height = CYLINDER_HEIGHT, nuclear_radius = NUCLEAR_RADIUS, nuclear_height = NUCLEAR_HEIGHT)
 
-        chroms = build_chroms(arms, method = GEOMETRY, radius = HELIX_RADIUS, height = HELIX_HEIGHT, turns = HELIX_TURNS)
+        elif GEOMETRY == "helix":
 
-        genome = build_genome(chroms, arms, method = GEOMETRY, radius = HELIX_RADIUS, height = HELIX_HEIGHT, turns = HELIX_TURNS, nuclear_radius = NUCLEAR_RADIUS, nuclear_height = NUCLEAR_HEIGHT)
+            chroms = build_chroms(arms, method = GEOMETRY, radius = HELIX_RADIUS, height = HELIX_HEIGHT, turns = HELIX_TURNS)
 
-# ************************************************************************
+            return build_genome(chroms, arms, method = GEOMETRY, radius = HELIX_RADIUS, height = HELIX_HEIGHT, turns = HELIX_TURNS, nuclear_radius = NUCLEAR_RADIUS, nuclear_height = NUCLEAR_HEIGHT)
 
-elif CHROMOSOMES in VALID_CHROMOSOMES:
+    elif CHROMOSOMES in VALID_CHROMOSOMES:
 
-    chromosome = CHROMOSOMES
-    chromosome_arms = CHROMOSOME_ARMS[chromosome]
+        chromosome_arms = CHROMOSOME_ARMS[CHROMOSOMES]
 
-    if GEOMETRY == "random_walk":
+        if GEOMETRY == "random_walk":
 
-        coords = build_single_chrom(arms, chromosome_arms, method="random_walk", rng=rngs[chromosome], step_size=STEP_SIZE, boundary="cylinder", cyl_radius=CYLINDER_RADIUS, cyl_height=CYLINDER_HEIGHT)
+            coords = build_single_chrom(arms, chromosome_arms, method = "random_walk", rng = rngs[CHROMOSOMES], step_size = STEP_SIZE, boundary = "cylinder", cyl_radius = CYLINDER_RADIUS, cyl_height = CYLINDER_HEIGHT)
 
-        genome = {chromosome: coords}
+        elif GEOMETRY == "helix":
 
-    elif GEOMETRY == "helix":
+            coords = build_single_chrom(arms, chromosome_arms, method = "helix", radius = HELIX_RADIUS, height = HELIX_HEIGHT, turns = HELIX_TURNS)
 
-        coords = build_single_chrom(arms, chromosome_arms, method="helix", radius=HELIX_RADIUS, height=HELIX_HEIGHT, turns=HELIX_TURNS)
+        return {CHROMOSOMES: coords}
 
-        genome = {chromosome: coords}
+    raise ValueError(f"Unknown geometry/chromosome selection: {GEOMETRY}, {CHROMOSOMES}")
 
-# ************************************************************************
 
-    else:
-        raise ValueError(f"Unknown geometry method: {GEOMETRY}")
+#--------------------------------------------------------------------------------------
+# Retry loop: a stuck or failed seed is replaced by seed+1, within a total time budget.
+#--------------------------------------------------------------------------------------
 
-# ************************************************************************
+class AttemptTimeout(Exception):
+    """Raised by the alarm handler when one geometry attempt exceeds its time limit."""
+
+def _on_alarm(signum, frame):
+    raise AttemptTimeout()
+
+signal.signal(signal.SIGALRM, _on_alarm)
+
+SEED = int(args.seed)
+genome = None
+attempt = 0
+t_start = time.monotonic()
+
+while genome is None:
+
+    remaining = args.total_timeout - (time.monotonic() - t_start)
+    if remaining <= 0:
+        break
+
+    attempt += 1
+    budget = min(args.attempt_timeout, remaining)
+    print(f"\n[writer] attempt {attempt}: seed = {SEED}, time limit = {budget:.0f} s", flush = True)
+
+    rngs = make_rngs(SEED, COPY_NAMES)
+
+    # start the alarm
+    signal.setitimer(signal.ITIMER_REAL, budget)      
+    try:
+        genome = build_geometry(rngs)
+    except AttemptTimeout:
+        print(f"[writer] seed {SEED} got stuck (no result after {budget:.0f} s): changing seed.", flush = True)
+    except RuntimeError as err:
+        print(f"[writer] seed {SEED} failed ({err}): changing seed.", flush = True)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)       # always cancel the alarm
+
+    # helix is deterministic: another seed would not change anything.
+    if genome is None and GEOMETRY == "helix":
+        break                                          
+
+    if genome is None:
+        SEED += 1
+
+elapsed = time.monotonic() - t_start
+
+if genome is None:
+    print(f"\n[writer] ABORTED: no valid geometry after {attempt} attempt(s) in {elapsed:.0f} s. No files were written.", file = sys.stderr, flush = True)
+    sys.exit(1)
+
+print(f"\n[writer] geometry built with seed {SEED} (attempt {attempt}, {elapsed:.1f} s).", flush = True)
 
 
 #------------------------------------------------------
@@ -187,21 +239,28 @@ elif CHROMOSOMES in VALID_CHROMOSOMES:
 #------------------------------------------------------
 
 # Filename encoding the geometry and chromosome selection, as well as any removed signals.
-if args.remove_signals:
-    removed_suffix = "_without_" + "_".join(args.remove_signals)
+
+removed_suffix = "_without_" + "_".join(args.remove_signals) if args.remove_signals else ""
+geometry_tag = {"random_walk": "rw", "helix": "helix"}[GEOMETRY]
+date_tag = date.today().strftime("%d%b")                    
+seed_tag = f"_seed{SEED}" if GEOMETRY == "random_walk" else ""
+
+if args.output is not None:
+    filename = args.output
 else:
-    removed_suffix = ""
+    filename = f"{date_tag}_{CHROMOSOMES}_{geometry_tag}{seed_tag}{removed_suffix}.data"
 
-if GEOMETRY == "random_walk":
-    filename = f"15Oct_{CHROMOSOMES}_rw{removed_suffix}.data"
-    topology_filename = f"15Oct_{CHROMOSOMES}_rw_topology{removed_suffix}.data"
-
-elif GEOMETRY == "helix":
-    filename = f"15Oct_{CHROMOSOMES}_helix{removed_suffix}.data"
-    topology_filename = f"15Oct_{CHROMOSOMES}_helix_topology{removed_suffix}.data"
-
+if args.topology_output is not None:
+    topology_filename = args.topology_output
 else:
-    raise ValueError(f"Unknown geometry method: {GEOMETRY}")
+    path = Path(filename)
+    topology_filename = str(path.with_name(path.stem + "_topology" + path.suffix))
+
+if args.output is not None and SEED != args.seed:
+    print(f"[writer] NOTE: requested seed {args.seed} was replaced by seed {SEED}; "
+          f"the file name '{filename}' does not show this.", flush = True)
+
+print(f"[writer] writing {filename} and {topology_filename}", flush = True)
 
 # Writing .data file.
 write_data(filename = filename, genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES, signal_names = SIGNAL_NAMES, include_signals = True)
