@@ -29,11 +29,11 @@ AVAILABLE_SIGNALS = [
 
 parser = argparse.ArgumentParser(description = "Build a coarse-grained Drosophila chromosome/genome geometry.")
 
-parser.add_argument("--geometry", required = True, choices = ["random_walk", "helix"], default = "random_walk", help = "Geometry generation method.")
+parser.add_argument("--geometry", required = True, choices = ["random_walk", "helix"], help = "Geometry generation method.")
 
-parser.add_argument("--chromosomes", required = True, choices = ["all", "chr2", "chr3", "chrX"], default = "all", help = "Chromosome to generate, or 'all' for the full genome.")
+parser.add_argument("--chromosomes", required = True, choices = ["all", "chr2", "chr3", "chrX"], help = "Chromosome to generate, or 'all' for the full genome.")
 
-parser.add_argument("--seed", default = "42", help = "Master seed for the random-walk geometry (default: 42). If it gets stuck, seed+1, seed+2, ... are tried.")
+parser.add_argument("--seed", type = int, default = "42", help = "Master seed for the random-walk geometry (default: 42). If it gets stuck, seed+1, seed+2, ... are tried.")
 
 parser.add_argument("--bed", default = "comp_HiTC_10000_WT_ST10_refined_with_chromwide.bed", help = "BED file containing the chromosome segmentation.")
 
@@ -71,9 +71,6 @@ HELIX_TURNS = 50
 
 # for random walk:
 STEP_SIZE = 1.0
-
-# Timeout for the generation of the geometry (in seconds):
-GENERATION_TIMEOUT = 180 
 
 # cylinder boundary (for random walk only):
 CYLINDER_RADIUS = 8.0
