@@ -59,6 +59,7 @@ variable dt     index 0.005
 variable n_min  index 1000              # cg iterations (if = 0, no minimization).
 variable n_run  index 10000
 variable thermo_every   index 100
+variable dump_every index 1000
 variable run0only   index no            # "yes" = stop after initial evaluation (run 0).
 #-------------------------------------------------------------------------------------------
 
@@ -126,16 +127,17 @@ variable    N_c equal c_episig[7]               # for three signals.
 variable    linres equal c_episig+${C}*c_episig[7]+${B11}*c_episig[1]+${B12}*c_episig[2]+${B13}*c_episig[3]+${B22}*c_episig[4]+${B23}*c_episig[5]+${B33}*c_episig[6]
 
 # printing raw Phi entries and N_c at every thermo step - python check and optimization.
-fix         epi_out all ave/time ${thermo_every} 1 ${thermo_every} c_episig c_episig[*] file ${prefix}_phi.dat
+fix         epi_out all ave/time ${thermo_every} 1 ${thermo_every} c_episig c_episig[*] file ${prefix}_phi.dat format " %.15g"
 
 # computing useful quantities.
 compute     rg all gyration
-compute     coord all coord/atom cutoff ${rc}
+compute     coord all coord/atom cutoff ${r_c}
 compute     coord_avg all reduce ave c_coord
 
 thermo          ${thermo_every}
 thermo_style    custom step temp press pe ebond evdwl c_episig v_N_c v_linres c_rg c_coord_avg
 thermo_modify   flush yes
+thermo_modify   format float " %.15g"
 #-------------------------------------------------------------------------------------------
 
 
@@ -159,7 +161,7 @@ if "${n_min} > 0" then "min_style cg" "minimize 0 1.0e-6 ${n_min} $(10*v_n_min)"
 #-------------------------------------------------------------------------------------------
 # Stage 2: Langevin equilibration.
 
-velocity        rest create ${T} ${vseed} rot yes dist gaussian
+velocity        rest create ${T} ${v_seed} rot yes dist gaussian
 timestep        ${dt}
 fix             integrate rest nve
 fix             thermostat rest langevin ${T} ${T} ${damp} ${l_seed}
