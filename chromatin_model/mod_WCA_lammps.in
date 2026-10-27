@@ -1,0 +1,173 @@
+#===========================================================================================
+# COPY INPUT: NEEDED TO TEST B=C=0 RETURNS PURE WCA.
+#
+# Input file for LAMMPS simulations with sigmoid/episig. 
+#
+# Sigmoid model: 
+# chromatin polymer; WCA core + signal-weighted sigmoid contact attraction.
+#
+#-------------------------------------------------------------------------------------------
+# READ ME: 
+# every "index" variable below can be overwritten from command line with:
+#       "lmp -in mod_sigmoid_lammps.in -var $ID$ $new_value$ ..."
+# for the omp version of the pair_styles:
+#       "lmp -sf omp -pk omp $num$ -in mod_sigmoid_lammps.in ..."
+# log name is set from variable ${prefix}.
+#-------------------------------------------------------------------------------------------
+#
+#-------------------------------------------------------------------------------------------
+# Sections of the file: 
+# Parameters; System; Interactions; Groups and confinement; Observables.
+#
+# Stages: 
+# 0: evaluation; 1: minimization; 2: Langevin equilibration; 3: production.
+#-------------------------------------------------------------------------------------------
+#===========================================================================================
+
+
+
+
+#-------------------------------------------------------------------------------------------
+# Parameters.
+
+# files.
+variable data   index 23Oct_chr2_rw_seed42_without_H3K27ac.data  
+variable prefix index sigmoid_test
+
+# interaction.
+variable eps_w  index 0.415             # WCA core strength; = 1 for Kremer-Grest.
+variable C      index 0.0               # baseline contact energy.
+variable r_c    index 1.78              # contact radius: sigmoid half-way (sigma).
+variable mu     index 3.22              # sigmoid steepness (1/sigma).
+variable r_cut  index 3.0               # sigmoid cutoff (sgima).
+variable b      index 0.25              # default value for every B entry (if B uniform).
+variable B11    index ${b}              # also allowing every entry to be different.
+variable B12    index ${b}        
+variable B13    index ${b}
+variable B22    index ${b}
+variable B23    index ${b}
+variable B33    index ${b}
+
+# langevin dynamics.
+variable damp   index 1.0               # damping parameter for langevin dynamics.
+variable n_eq   index 10000             # langevin equilibration steps.
+variable l_seed index 928374
+
+# run control.
+variable v_seed index 42
+variable skin   index 0.3               # skin distance for neighbor command.
+variable T      index 1.0
+variable dt     index 0.005
+variable n_min  index 1000              # cg iterations (if = 0, no minimization).
+variable n_run  index 10000
+variable thermo_every   index 100
+variable dump_every index 1000
+variable run0only   index no            # "yes" = stop after initial evaluation (run 0).
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# System. 
+
+log             ${prefix}.log
+units           lj
+boundary        f f f
+atom_style      bond
+
+fix             signals all property/atom d2_signals 3 ghost yes
+read_data       ${data} fix signals NULL Signals
+
+neighbor        ${skin} bin
+neigh_modify    delay 0 every 1 check yes
+comm_modify     cutoff 3.5
+
+bond_style  harmonic
+bond_coeff 1 40.0 1.0                   # for a spring constant of k' = 2k = 80
+special_bonds   lj 0.0 0.0 0.0          # to allow sum over only non-directly bonded pairs.
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Interactions.
+
+pair_style  lj/cut 1.122462
+pair_coeff  * * ${eps_w} 1.0 1.122462
+pair_modify shift yes
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Groups and confinement.
+
+group       for_freeze type 2
+group       rest subtract all for_freeze
+
+region		Cyl cylinder z 0 0 28 -1 69 side in
+fix		    nucleus all wall/region Cyl lj126 0.15 1.0 2.5
+
+fix         freeze for_freeze setforce 0.0 0.0 0.0
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Observables.
+
+# computing useful quantities.
+compute     rg all gyration
+compute     coord all coord/atom cutoff 1.122462
+compute     coord_avg all reduce ave c_coord
+
+thermo          ${thermo_every}
+thermo_style    custom step temp press pe ebond evdwl c_rg c_coord_avg
+thermo_modify   flush yes
+thermo_modify   format float %.15g
+#-------------------------------------------------------------------------------------------
+
+
+
+
+#-------------------------------------------------------------------------------------------
+# Stage 0: evaluation.
+
+run     0
+if "${run0only} == yes" then "quit 0"
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Stage 1: minimization.
+
+if "${n_min} > 0" then "min_style cg" "minimize 0 1.0e-6 ${n_min} $(10*v_n_min)"
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Stage 2: Langevin equilibration.
+
+velocity        rest create ${T} ${v_seed} rot yes dist gaussian
+timestep        ${dt}
+fix             integrate rest nve
+fix             thermostat rest langevin ${T} ${T} ${damp} ${l_seed}
+
+run             ${n_eq}
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Stage 3: production.
+
+# for energy-conservation test, uncomment the next line: NVE only.
+# unfix           thermostat
+
+dump            traj all custom ${dump_every} ${prefix}.lammpstrj id mol type x y z
+dump_modify     traj sort id
+
+# radial distribution function, g(r): how likely it is to find another bead at distance r from a given bead,
+# compared with a completely uniform arrangement at the same average density.
+compute         rdf all rdf 125 cutoff 2.5
+fix             rdf_out all ave/time $(10*v_thermo_every) 1 $(10*v_thermo_every) c_rdf[*] file ${prefix}.rdf mode vector ave running
+
+run             ${n_run}
+
+write_restart   ${prefix}.restart
+#-------------------------------------------------------------------------------------------
