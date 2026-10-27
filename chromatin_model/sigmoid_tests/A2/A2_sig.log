@@ -1,0 +1,394 @@
+units           lj
+boundary        f f f
+atom_style      bond
+
+fix             signals all property/atom d2_signals 3 ghost yes
+read_data       ${data} fix signals NULL Signals
+read_data       23Oct_chr2_rw_seed42_without_H3K27ac.data fix signals NULL Signals
+Reading data file ...
+  orthogonal box = (-30 -30 -2) to (30 30 70)
+  1 by 1 by 1 MPI processor grid
+  reading atoms ...
+  4881 atoms
+  scanning bonds ...
+  1 = max bonds/atom
+  orthogonal box = (-30 -30 -2) to (30 30 70)
+  1 by 1 by 1 MPI processor grid
+  reading bonds ...
+  4880 bonds
+Finding 1-2 1-3 1-4 neighbors ...
+  special bond factors lj:    0        0        0       
+  special bond factors coul:  0        0        0       
+     2 = max # of 1-2 neighbors
+     2 = max # of 1-3 neighbors
+     4 = max # of 1-4 neighbors
+     6 = max # of special neighbors
+  special bonds CPU = 0.002 seconds
+  read_data CPU = 0.022 seconds
+
+neighbor        ${skin} bin
+neighbor        0.3 bin
+neigh_modify    delay 0 every 1 check yes
+comm_modify     cutoff 3.5
+
+bond_style  harmonic
+bond_coeff 1 40.0 1.0                   # for a spring constant of k' = 2k = 80
+special_bonds   lj 0.0 0.0 0.0          # to allow sum over only non-directly bonded pairs.
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Interactions.
+
+pair_style hybrid/overlay lj/cut 1.122462 sigmoid/episig 3 ${r_cut}     # allow usage of different pair_styles.
+pair_style hybrid/overlay lj/cut 1.122462 sigmoid/episig 3 3.0     
+pair_coeff * * lj/cut ${eps_w} 1.0 1.122462         # WCA core: LJ cut at r_min = 2^(1/6).
+pair_coeff * * lj/cut 0.415 1.0 1.122462         
+pair_coeff * * sigmoid/episig ${C} ${r_c} ${mu}
+pair_coeff * * sigmoid/episig 0 ${r_c} ${mu}
+pair_coeff * * sigmoid/episig 0 1.78 ${mu}
+pair_coeff * * sigmoid/episig 0 1.78 3.22
+
+pair_coeff      * * sigmoid/episig B 1 1 ${B11}     # introducing B entries: only the second pair_style uses them.
+pair_coeff      * * sigmoid/episig B 1 1 0     
+pair_coeff      * * sigmoid/episig B 1 2 ${B12}
+pair_coeff      * * sigmoid/episig B 1 2 0
+pair_coeff      * * sigmoid/episig B 1 3 ${B13}
+pair_coeff      * * sigmoid/episig B 1 3 0
+pair_coeff      * * sigmoid/episig B 2 2 ${B22}
+pair_coeff      * * sigmoid/episig B 2 2 0
+pair_coeff      * * sigmoid/episig B 2 3 ${B23}
+pair_coeff      * * sigmoid/episig B 2 3 0
+pair_coeff      * * sigmoid/episig B 3 3 ${B33}
+pair_coeff      * * sigmoid/episig B 3 3 0
+
+pair_modify     shift yes                           # required both for WCA core and contact attraction.
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Groups and confinement.
+
+group       for_freeze type 2
+4 atoms in group for_freeze
+group       rest subtract all for_freeze
+4877 atoms in group rest
+
+region		Cyl cylinder z 0 0 28 -1 69 side in
+fix		    nucleus all wall/region Cyl lj126 0.15 1.0 2.5
+
+fix         freeze for_freeze setforce 0.0 0.0 0.0
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Observables.
+
+# components of Phi matrix (six for three sig/ten for four sig) and number of contacts N_c.
+compute     episig all pair sigmoid/episig
+variable    N_c equal c_episig[7]               # for three signals.
+
+# linearity check: must be ca. 0 at every step.
+variable    linres equal c_episig+${C}*c_episig[7]+${B11}*c_episig[1]+${B12}*c_episig[2]+${B13}*c_episig[3]+${B22}*c_episig[4]+${B23}*c_episig[5]+${B33}*c_episig[6]
+variable    linres equal c_episig+0*c_episig[7]+${B11}*c_episig[1]+${B12}*c_episig[2]+${B13}*c_episig[3]+${B22}*c_episig[4]+${B23}*c_episig[5]+${B33}*c_episig[6]
+variable    linres equal c_episig+0*c_episig[7]+0*c_episig[1]+${B12}*c_episig[2]+${B13}*c_episig[3]+${B22}*c_episig[4]+${B23}*c_episig[5]+${B33}*c_episig[6]
+variable    linres equal c_episig+0*c_episig[7]+0*c_episig[1]+0*c_episig[2]+${B13}*c_episig[3]+${B22}*c_episig[4]+${B23}*c_episig[5]+${B33}*c_episig[6]
+variable    linres equal c_episig+0*c_episig[7]+0*c_episig[1]+0*c_episig[2]+0*c_episig[3]+${B22}*c_episig[4]+${B23}*c_episig[5]+${B33}*c_episig[6]
+variable    linres equal c_episig+0*c_episig[7]+0*c_episig[1]+0*c_episig[2]+0*c_episig[3]+0*c_episig[4]+${B23}*c_episig[5]+${B33}*c_episig[6]
+variable    linres equal c_episig+0*c_episig[7]+0*c_episig[1]+0*c_episig[2]+0*c_episig[3]+0*c_episig[4]+0*c_episig[5]+${B33}*c_episig[6]
+variable    linres equal c_episig+0*c_episig[7]+0*c_episig[1]+0*c_episig[2]+0*c_episig[3]+0*c_episig[4]+0*c_episig[5]+0*c_episig[6]
+
+# printing raw Phi entries and N_c at every thermo step - python check and optimization.
+fix         epi_out all ave/time ${thermo_every} 1 ${thermo_every} c_episig c_episig[*] file ${prefix}_phi.dat format %.15g
+fix         epi_out all ave/time 100 1 ${thermo_every} c_episig c_episig[*] file ${prefix}_phi.dat format %.15g
+fix         epi_out all ave/time 100 1 100 c_episig c_episig[*] file ${prefix}_phi.dat format %.15g
+fix         epi_out all ave/time 100 1 100 c_episig c_episig[*] file A2_sig_phi.dat format %.15g
+
+# computing useful quantities.
+compute     rg all gyration
+compute     coord all coord/atom cutoff ${r_c}
+compute     coord all coord/atom cutoff 1.78
+compute     coord_avg all reduce ave c_coord
+
+thermo          ${thermo_every}
+thermo          100
+thermo_style    custom step temp press pe ebond evdwl c_episig v_N_c v_linres c_rg c_coord_avg
+thermo_modify   flush yes
+thermo_modify   format float %.15g
+#-------------------------------------------------------------------------------------------
+
+
+
+
+#-------------------------------------------------------------------------------------------
+# Stage 0: evaluation.
+
+run     0
+WARNING: No fixes with time integration, atoms won't move
+For more information see https://docs.lammps.org/err0028 (src/verlet.cpp:60)
+Generated 0 of 1 mixed pair_coeff terms from geometric mixing rule
+Neighbor list info ...
+  update: every = 1 steps, delay = 0 steps, check = yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 3.3
+  ghost atom cutoff = 3.5
+  binsize = 1.65, bins = 37 37 44
+  3 neighbor lists, perpetual/occasional/extra = 2 1 0
+  (1) pair lj/cut, perpetual
+      attributes: half, newton on
+      pair build: half/bin/newton
+      stencil: half/bin/3d
+      bin: standard
+  (2) pair sigmoid/episig, perpetual
+      attributes: half, newton on, cut 3.3
+      pair build: half/bin/newton
+      stencil: half/bin/3d
+      bin: standard
+  (3) compute coord/atom, occasional
+      attributes: full, newton on
+      pair build: full/bin
+      stencil: full/bin/3d
+      bin: standard
+Per MPI rank memory allocation (min/avg/max) = 7.674 | 7.674 | 7.674 Mbytes
+   Step          Temp          Press          PotEng         E_bond         E_vdwl        c_episig        v_N_c         v_linres         c_rg       c_coord_avg  
+         0  0 0.740847807773742 8.68700521187388 6.41903665984674e-12 8.68700521186747 0 23896.9013747743 0 23.4090994973766 9.01577545584921
+Loop time of 8.54e-07 on 1 procs for 0 steps with 4881 atoms
+
+117.1% CPU use with 1 MPI tasks x 1 OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 0          | 0          | 0          |   0.0 |  0.00
+Bond    | 0          | 0          | 0          |   0.0 |  0.00
+Neigh   | 0          | 0          | 0          |   0.0 |  0.00
+Comm    | 0          | 0          | 0          |   0.0 |  0.00
+Output  | 0          | 0          | 0          |   0.0 |  0.00
+Modify  | 0          | 0          | 0          |   0.0 |  0.00
+Other   |            | 8.54e-07   |            |       |100.00
+
+Nlocal:           4881 ave        4881 max        4881 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Nghost:              0 ave           0 max           0 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Neighs:         151188 ave      151188 max      151188 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+FullNghs:       302376 ave      302376 max      302376 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+
+Total # of neighbors = 302376
+Ave neighs/atom = 61.9496
+Ave special neighs/atom = 5.9975415
+Neighbor list builds = 0
+Dangerous builds = 0
+if "${run0only} == yes" then "quit 0"
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Stage 1: minimization.
+
+if "${n_min} > 0" then "min_style cg" "minimize 0 1.0e-6 ${n_min} $(10*v_n_min)"
+min_style cg
+minimize 0 1.0e-6 ${n_min} $(10*v_n_min)
+minimize 0 1.0e-6 200 $(10*v_n_min)
+minimize 0 1.0e-6 200 2000
+Generated 0 of 1 mixed pair_coeff terms from geometric mixing rule
+Per MPI rank memory allocation (min/avg/max) = 10.07 | 10.07 | 10.07 Mbytes
+   Step          Temp          Press          PotEng         E_bond         E_vdwl        c_episig        v_N_c         v_linres         c_rg       c_coord_avg  
+         0  0 0.740847807773742 8.68700521187388 6.41903665984674e-12 8.68700521186747 0 23896.9013747743 0 23.4090994973766 9.01577545584921
+        51  0 4.70637550140554e-06 7.48002777300554e-06 5.9894903418986e-06 1.49053743110694e-06 0 21109.404814605 0 23.4163195083336 7.63941815201803
+Loop time of 0.85336 on 1 procs for 51 steps with 4881 atoms
+
+99.7% CPU use with 1 MPI tasks x 1 OpenMP threads
+
+Minimization stats:
+  Stopping criterion = linesearch alpha is zero
+  Energy initial, next-to-last, final = 
+      8.68700521187388 7.48002777300554e-06 7.48002777300554e-06
+  Force two-norm initial, final = 35159.53 3.6375194
+  Force max component initial, final = 2777.4504 0.56815534
+  Final line search alpha, max atom move = 7.0579607e-06 4.0100181e-06
+  Iterations, force evaluations = 51 127
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 0.67352    | 0.67352    | 0.67352    |   0.0 | 78.93
+Bond    | 0.004175   | 0.004175   | 0.004175   |   0.0 |  0.49
+Neigh   | 0.14962    | 0.14962    | 0.14962    |   0.0 | 17.53
+Comm    | 0.00032087 | 0.00032087 | 0.00032087 |   0.0 |  0.04
+Output  | 0          | 0          | 0          |   0.0 |  0.00
+Modify  | 0.006496   | 0.006496   | 0.006496   |   0.0 |  0.76
+Other   |            | 0.01923    |            |       |  2.25
+
+Nlocal:           4881 ave        4881 max        4881 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Nghost:              0 ave           0 max           0 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Neighs:         144977 ave      144977 max      144977 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+FullNghs:       290096 ave      290096 max      290096 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+
+Total # of neighbors = 290096
+Ave neighs/atom = 59.433723
+Ave special neighs/atom = 5.9975415
+Neighbor list builds = 15
+Dangerous builds = 0
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Stage 2: Langevin equilibration.
+
+velocity        rest create ${T} ${v_seed} rot yes dist gaussian
+velocity        rest create 1.0 ${v_seed} rot yes dist gaussian
+velocity        rest create 1.0 42 rot yes dist gaussian
+timestep        ${dt}
+timestep        0.005
+fix             integrate rest nve
+fix             thermostat rest langevin ${T} ${T} ${damp} ${l_seed}
+fix             thermostat rest langevin 1.0 ${T} ${damp} ${l_seed}
+fix             thermostat rest langevin 1.0 1.0 ${damp} ${l_seed}
+fix             thermostat rest langevin 1.0 1.0 1.0 ${l_seed}
+fix             thermostat rest langevin 1.0 1.0 1.0 928374
+
+run             ${n_eq}
+run             1000
+Generated 0 of 1 mixed pair_coeff terms from geometric mixing rule
+Per MPI rank memory allocation (min/avg/max) = 8.946 | 8.946 | 8.946 Mbytes
+   Step          Temp          Press          PotEng         E_bond         E_vdwl        c_episig        v_N_c         v_linres         c_rg       c_coord_avg  
+        51  0.99918032786885 0.0188164347705631 7.48002777300554e-06 5.9894903418986e-06 1.49053743110694e-06 0 21109.404814605 0 23.4163195083336 7.63941815201803
+       100  0.820599840477741 0.0153696931376633 0.409150537452294 0.321242361508855 0.0879081759434388 0 20807.1704283577 0 23.4207024747594 7.63040360581848
+       200  0.902254983656372 0.0122689202467762 0.495867690871405 0.428480642769799 0.0673870481016063 0 18585.57629632 0 23.4333731860551 6.7900020487605
+       300  0.950268448769278 0.0116949063615749 0.496684188807128 0.440696616916465 0.0559875718906633 0 16602.0795205757 0 23.4386936115481 6.00737553779963
+       400  0.982616381853548 0.0111869249068867 0.518208980867191 0.470720506109221 0.04748847475797 0 15060.6655113355 0 23.4363656446826 5.4259373079287
+       500  0.979902984191286 0.00979707682652763 0.538137894029427 0.488923233825802 0.0492146602036244 0 13916.9389847177 0 23.425353502655 4.94283958205286
+       600  0.986845601065464 0.00799903120589643 0.54093596263205 0.499700762447358 0.0412352001846917 0 13103.6522521907 0 23.4140896221236 4.67240319606638
+       700  0.979213073802066 0.00568142603153094 0.556724206875658 0.516244229824271 0.0404799770513872 0 12661.0899126544 0 23.4063039525354 4.52653144847367
+       800  0.999335129141011 0.00621206414580813 0.540384230925206 0.503454288315771 0.036929942609435 0 12120.9806869592 0 23.3965583452013 4.31346035648433
+       900  0.994200164433016 0.00590998527102511 0.555331155316853 0.518581437632034 0.0367497176848195 0 11654.633181507 0 23.3957840741518 4.12374513419381
+      1000  0.980246848220905 0.00716155316974496 0.53179635667236 0.499166172154874 0.0326301845174866 0 11300.2033810428 0 23.392944276322 4.00450727309978
+      1051  0.993154054201264 0.0062185124347883 0.534046939035274 0.497523719011783 0.036523220023491 0 11199.7669219702 0 23.3879888140208 3.9479614833026
+Loop time of 5.10014 on 1 procs for 1000 steps with 4881 atoms
+
+Performance: 84703.640 tau/day, 196.073 timesteps/s, 957.033 katom-step/s
+100.0% CPU use with 1 MPI tasks x 1 OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 3.3091     | 3.3091     | 3.3091     |   0.0 | 64.88
+Bond    | 0.027052   | 0.027052   | 0.027052   |   0.0 |  0.53
+Neigh   | 1.3736     | 1.3736     | 1.3736     |   0.0 | 26.93
+Comm    | 0.0032628  | 0.0032628  | 0.0032628  |   0.0 |  0.06
+Output  | 0.12212    | 0.12212    | 0.12212    |   0.0 |  2.39
+Modify  | 0.25456    | 0.25456    | 0.25456    |   0.0 |  4.99
+Other   |            | 0.01047    |            |       |  0.21
+
+Nlocal:           4881 ave        4881 max        4881 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Nghost:              0 ave           0 max           0 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Neighs:          98654 ave       98654 max       98654 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+FullNghs:       197246 ave      197246 max      197246 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+
+Total # of neighbors = 197246
+Ave neighs/atom = 40.410981
+Ave special neighs/atom = 5.9975415
+Neighbor list builds = 139
+Dangerous builds = 0
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Stage 3: production.
+
+# for energy-conservation test, uncomment the next line: NVE only.
+# unfix           thermostat
+
+dump            traj all custom ${dump_every} ${prefix}.lammpstrj id mol type x y z
+dump            traj all custom 1000 ${prefix}.lammpstrj id mol type x y z
+dump            traj all custom 1000 A2_sig.lammpstrj id mol type x y z
+dump_modify     traj sort id
+
+# radial distribution function, g(r): how likely it is to find another bead at distance r from a given bead,
+# compared with a completely uniform arrangement at the same average density.
+compute         rdf all rdf 125 cutoff 2.5
+fix             rdf_out all ave/time $(10*v_thermo_every) 1 $(10*v_thermo_every) c_rdf[*] file ${prefix}.rdf mode vector ave running
+fix             rdf_out all ave/time 1000 1 $(10*v_thermo_every) c_rdf[*] file ${prefix}.rdf mode vector ave running
+fix             rdf_out all ave/time 1000 1 1000 c_rdf[*] file ${prefix}.rdf mode vector ave running
+fix             rdf_out all ave/time 1000 1 1000 c_rdf[*] file A2_sig.rdf mode vector ave running
+
+run             ${n_run}
+run             0
+Generated 0 of 1 mixed pair_coeff terms from geometric mixing rule
+Neighbor list info ...
+  update: every = 1 steps, delay = 0 steps, check = yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 3.3
+  ghost atom cutoff = 3.5
+  binsize = 1.65, bins = 37 37 44
+  4 neighbor lists, perpetual/occasional/extra = 2 2 0
+  (1) pair lj/cut, perpetual
+      attributes: half, newton on
+      pair build: half/bin/newton
+      stencil: half/bin/3d
+      bin: standard
+  (2) pair sigmoid/episig, perpetual
+      attributes: half, newton on, cut 3.3
+      pair build: half/bin/newton
+      stencil: half/bin/3d
+      bin: standard
+  (3) compute coord/atom, occasional
+      attributes: full, newton on
+      pair build: full/bin
+      stencil: full/bin/3d
+      bin: standard
+  (4) compute rdf, occasional, trim from (2)
+      attributes: half, newton on, cut 2.8
+      pair build: trim
+      stencil: none
+      bin: none
+Per MPI rank memory allocation (min/avg/max) = 8.43 | 8.43 | 8.43 Mbytes
+   Step          Temp          Press          PotEng         E_bond         E_vdwl        c_episig        v_N_c         v_linres         c_rg       c_coord_avg  
+      1051  0.993154054201265 0.00621851243478831 0.534046939035273 0.497523719011782 0.036523220023491 0 11199.7669219702 0 23.3879888140208 3.9479614833026
+Loop time of 8.17e-07 on 1 procs for 0 steps with 4881 atoms
+
+122.4% CPU use with 1 MPI tasks x 1 OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 0          | 0          | 0          |   0.0 |  0.00
+Bond    | 0          | 0          | 0          |   0.0 |  0.00
+Neigh   | 0          | 0          | 0          |   0.0 |  0.00
+Comm    | 0          | 0          | 0          |   0.0 |  0.00
+Output  | 0          | 0          | 0          |   0.0 |  0.00
+Modify  | 0          | 0          | 0          |   0.0 |  0.00
+Other   |            | 8.17e-07   |            |       |100.00
+
+Nlocal:           4881 ave        4881 max        4881 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Nghost:              0 ave           0 max           0 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Neighs:          98623 ave       98623 max       98623 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+FullNghs:       197246 ave      197246 max      197246 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+
+Total # of neighbors = 197246
+Ave neighs/atom = 40.410981
+Ave special neighs/atom = 5.9975415
+Neighbor list builds = 0
+Dangerous builds = 0
+
+write_restart   ${prefix}.restart
+write_restart   A2_sig.restart
+System init for write_restart ...
+Generated 0 of 1 mixed pair_coeff terms from geometric mixing rule
+#-------------------------------------------------------------------------------------------
+Total wall time: 0:00:06
