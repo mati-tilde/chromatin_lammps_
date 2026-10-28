@@ -1,0 +1,15 @@
+$ for dt in 0.005 0.01 0.02; do
+  python3 energy_drift.py B1_*_dt${dt}.log --dt "$dt"
+done> > 
+                                     log time (tau)  drift (kT/atom/tau)  std (kT/atom)  total change/kT
+                      B1_lj0_dt0.005.log      100.0           -4.732e-08      2.089e-05       -4.732e-06
+                       B1_lj_dt0.005.log      100.0           -8.412e-05      9.481e-04       -8.412e-03
+                      B1_sig_dt0.005.log      100.0           -1.707e-06      6.991e-05       -1.707e-04
+                                     log time (tau)  drift (kT/atom/tau)  std (kT/atom)  total change/kT
+                       B1_lj0_dt0.01.log      200.0            1.139e-07      8.068e-05        2.277e-05
+                        B1_lj_dt0.01.log      200.0           -4.449e-05      1.077e-03       -8.897e-03
+                       B1_sig_dt0.01.log      200.0            3.256e-07      3.033e-04        6.513e-05
+                                     log time (tau)  drift (kT/atom/tau)  std (kT/atom)  total change/kT
+                       B1_lj0_dt0.02.log      400.0            1.838e-04      2.318e-03        7.352e-02
+                        B1_lj_dt0.02.log      400.0            5.097e-04      5.048e-03        2.039e-01
+                       B1_sig_dt0.02.log      114.0            1.365e-02      1.383e-01        1.556e+00
