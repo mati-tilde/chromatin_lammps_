@@ -37,7 +37,7 @@ variable eps_w  index 0.415             # WCA core strength; = 1 for Kremer-Gres
 variable C      index 0.0               # baseline contact energy.
 variable r_c    index 1.78              # contact radius: sigmoid half-way (sigma).
 variable mu     index 3.22              # sigmoid steepness (1/sigma).
-variable r_cut  index 3.0               # sigmoid cutoff (sgima).
+variable r_cut  index 2.5               # sigmoid cutoff (sgima).
 variable b      index 0.25              # default value for every B entry (if B uniform).
 variable B11    index ${b}              # also allowing every entry to be different.
 variable B12    index ${b}        
@@ -45,11 +45,13 @@ variable B13    index ${b}
 variable B22    index ${b}
 variable B23    index ${b}
 variable B33    index ${b}
+variable form   index exp               # between: tanh, rational, exp; exp is fastest one with exact reasults in energy.
 
 # langevin dynamics.
 variable damp   index 1.0               # damping parameter for langevin dynamics.
 variable n_eq   index 10000             # langevin equilibration steps.
 variable l_seed index 928374
+variable prod   index langevin
 
 # run control.
 variable v_seed index 42
@@ -88,7 +90,7 @@ special_bonds   lj 0.0 0.0 0.0          # to allow sum over only non-directly bo
 #-------------------------------------------------------------------------------------------
 # Interactions.
 
-pair_style hybrid/overlay lj/cut 1.122462 sigmoid/episig 3 ${r_cut}     # allow usage of different pair_styles.
+pair_style hybrid/overlay lj/cut 1.122462 sigmoid/episig 3 ${r_cut} form ${form}     # allow usage of different pair_styles.
 pair_coeff * * lj/cut ${eps_w} 1.0 1.122462         # WCA core: LJ cut at r_min = 2^(1/6).
 pair_coeff * * sigmoid/episig ${C} ${r_c} ${mu}     
 
@@ -111,6 +113,9 @@ group       rest subtract all for_freeze
 
 region		Cyl cylinder z 0 0 28 -1 69 side in
 fix		    nucleus all wall/region Cyl lj126 0.15 1.0 2.5
+
+# to include wall energy in total energy (needed to check energy conservation correctly):
+fix_modify  nucleus energy yes
 
 fix         freeze for_freeze setforce 0.0 0.0 0.0
 #-------------------------------------------------------------------------------------------
@@ -135,7 +140,7 @@ compute     coord all coord/atom cutoff ${r_c}
 compute     coord_avg all reduce ave c_coord
 
 thermo          ${thermo_every}
-thermo_style    custom step temp press pe ebond evdwl c_episig v_N_c v_linres c_rg c_coord_avg
+thermo_style    custom step temp press pe ke etotal ebond evdwl c_episig v_N_c v_linres c_rg c_coord_avg
 thermo_modify   flush yes
 thermo_modify   format float " %.15g"
 #-------------------------------------------------------------------------------------------
@@ -173,8 +178,8 @@ run             ${n_eq}
 #-------------------------------------------------------------------------------------------
 # Stage 3: production.
 
-# for energy-conservation test, uncomment the next line: NVE only.
-# unfix           thermostat
+# for energy-conservation test: -var prod nve gives a pure NVE production run.
+if "${prod} == nve" then "unfix thermostat"
 
 dump            traj all custom ${dump_every} ${prefix}.lammpstrj id mol type x y z
 dump_modify     traj sort id
