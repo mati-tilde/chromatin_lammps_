@@ -10,9 +10,8 @@ import MDAnalysis as mda
 import numpy as np
 import matplotlib.pyplot as plt
 
-from MDAnalysis.analysis import distances as mda_dist
-from scipy.sparse import csr_matrix, save_npz, load_npz
-
+from scipy.sparse import csr_matrix, save_npz, load_npz, coo_matrix
+from MDAnalysis.lib.distances import self_capped_distance
 
 #------------------------
 # 1 -- UTILITY FUNCTIONS.
@@ -46,12 +45,22 @@ def load_universe(topology_file: str, traj_file: str):
 #---------------------------------------------------------------------------------------------------------
 
 #---------------------------------------------------------------------------------------------------------
-# Taking a generic matrix and return it symmetric (for physical relevance).
+# Contacts of one frame as an upper-triangular (i < j) sparse matrix of counts.
+def frame_contacts(coords, cut, box=None):
+
+    n = len(coords)
+    pairs = self_capped_distance(coords, max_cutoff=cut, box=box, return_distances=False)
+
+    pairs = np.sort(pairs, axis=1)   # guard: force i < j, so each pair sits in the upper triangle
+    data = np.ones(len(pairs), dtype=np.int32)
+
+    return coo_matrix((data, (pairs[:, 0], pairs[:, 1])), shape=(n, n)).tocsr()
+
+#---------------------------------------------------------------------------------------------------------
+# Symmetrizing an upper-triangular count matrix.
 def symmetric_form(mat: csr_matrix):
 
-    sym_mat = ((mat + mat.T) > 0)
-    mat.sum_duplicates()
-    sym_mat.setdiag(0)
+    sym_mat = (mat + mat.T).tocsr()
     sym_mat.eliminate_zeros()
 
     return sym_mat
@@ -59,12 +68,13 @@ def symmetric_form(mat: csr_matrix):
 
 #---------------------------------------------------------------------------------------------------------
 # Accumulating contacts from different frames (given from terminal) to create a single contact map.
-def accumulate_contacts(universe, atom_range, frame_range, genome_length, cut):
+def accumulate_contacts(universe, atom_range, frame_range, genome_length, cut, single_chr):
 
     # selecting the requested atoms, for both copies in the file:
     start, stop = atom_range
     A_atoms = universe.select_atoms(f'index {start}:{stop - 1}')
-    B_atoms = universe.select_atoms(f'index {start + genome_length}:{stop + genome_length -1}')
+    if not single_chr:
+        B_atoms = universe.select_atoms(f'index {start + genome_length}:{stop + genome_length -1}')
 
     # selecting the requested frames:
     if frame_range is None:
@@ -76,43 +86,26 @@ def accumulate_contacts(universe, atom_range, frame_range, genome_length, cut):
 
     f_stop = min(f_stop, len(universe.trajectory))		# safety check
 
+    n = stop - start
+
     # initializing variables
-    acc = None
+    acc = csr_matrix((n, n), dtype=np.int32)
     num_frames = 0
 
-    # looping over the frames indicated from terminal
-    for traj in universe.trajectory[f_start:f_stop:f_stride]:
-        if traj.frame % 100 == 0:
-            print(f"Frame: {traj.frame}")
+    # looping over the frames
+    for ts in universe.trajectory[f_start:f_stop:f_stride]:
+        if ts.frame % 100 == 0:
+            print(f"Frame: {ts.frame}")
 
-        # first copy (A_atoms)
-        A_coords = A_atoms.positions
-        mat = mda_dist.contact_matrix(A_coords, cutoff=cut, returntype="sparse", box=None)
-        mat = mat.tocsr().astype(np.float32, copy=False)
-
-        if acc is None:
-            acc = mat.copy()				# use mat.copy() and not just mat to ensure acc and mat are independent (avoid bugs)
-        else:
-            acc += mat
-
-        # second copy (B_atoms)
-        B_coords = B_atoms.positions
-        mat = mda_dist.contact_matrix(B_coords, cutoff=cut, returntype="sparse", box=None)
-        mat = mat.tocsr().astype(np.float32, copy=False)
-
-        acc += mat
+        acc += frame_contacts(A_atoms.positions, cut)   # first copy
+        if not single_chr:
+            acc += frame_contacts(B_atoms.positions, cut)   # second copy
 
         num_frames += 1
 
-    acc = symmetric_form(acc)				# computing it just once at the end because symmetrization and sum are commutative; gives a more efficient code.
-    acc.sum_suplicates()
-    acc.eliminate_zeros()
+    acc = symmetric_form(acc)   # once at the end: (sum of M_t) + (sum of M_t)^T
 
     return acc, num_frames
-#---------------------------------------------------------------------------------------------------------
-
-
-
 #-----------------------------
 # 3 -- FUNCTIONS FOR ENSEMBLE.
 #-----------------------------
