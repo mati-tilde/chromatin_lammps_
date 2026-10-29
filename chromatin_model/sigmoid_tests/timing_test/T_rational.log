@@ -1,0 +1,245 @@
+units           lj
+boundary        f f f
+atom_style      bond
+
+fix             signals all property/atom d2_signals 3 ghost yes
+read_data       ${data} fix signals NULL Signals
+read_data       23Oct_chr2_rw_seed42_without_H3K27ac.data fix signals NULL Signals
+Reading data file ...
+  orthogonal box = (-30 -30 -2) to (30 30 70)
+  1 by 1 by 1 MPI processor grid
+  reading atoms ...
+  4881 atoms
+  scanning bonds ...
+  1 = max bonds/atom
+  orthogonal box = (-30 -30 -2) to (30 30 70)
+  1 by 1 by 1 MPI processor grid
+  reading bonds ...
+  4880 bonds
+Finding 1-2 1-3 1-4 neighbors ...
+  special bond factors lj:    0        0        0       
+  special bond factors coul:  0        0        0       
+     2 = max # of 1-2 neighbors
+     2 = max # of 1-3 neighbors
+     4 = max # of 1-4 neighbors
+     6 = max # of special neighbors
+  special bonds CPU = 0.001 seconds
+  read_data CPU = 0.022 seconds
+
+neighbor        ${skin} bin
+neighbor        0.3 bin
+neigh_modify    delay 0 every 1 check yes
+comm_modify     cutoff 3.5
+
+bond_style  harmonic
+bond_coeff 1 40.0 1.0                   # for a spring constant of k' = 2k = 80
+special_bonds   lj 0.0 0.0 0.0          # to allow sum over only non-directly bonded pairs.
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Interactions.
+
+pair_style hybrid/overlay lj/cut 1.122462 sigmoid/episig 3 ${r_cut} form ${form}     # allow usage of different pair_styles.
+pair_style hybrid/overlay lj/cut 1.122462 sigmoid/episig 3 2.5 form ${form}     
+pair_style hybrid/overlay lj/cut 1.122462 sigmoid/episig 3 2.5 form rational     
+pair_coeff * * lj/cut ${eps_w} 1.0 1.122462         # WCA core: LJ cut at r_min = 2^(1/6).
+pair_coeff * * lj/cut 0.415 1.0 1.122462         
+pair_coeff * * sigmoid/episig ${C} ${r_c} ${mu}
+pair_coeff * * sigmoid/episig 0.1 ${r_c} ${mu}
+pair_coeff * * sigmoid/episig 0.1 1.78 ${mu}
+pair_coeff * * sigmoid/episig 0.1 1.78 6
+
+pair_coeff      * * sigmoid/episig B 1 1 ${B11}     # introducing B entries: only the second pair_style uses them.
+pair_coeff      * * sigmoid/episig B 1 1 0.25     
+pair_coeff      * * sigmoid/episig B 1 2 ${B12}
+pair_coeff      * * sigmoid/episig B 1 2 0.25
+pair_coeff      * * sigmoid/episig B 1 3 ${B13}
+pair_coeff      * * sigmoid/episig B 1 3 0.25
+pair_coeff      * * sigmoid/episig B 2 2 ${B22}
+pair_coeff      * * sigmoid/episig B 2 2 0.25
+pair_coeff      * * sigmoid/episig B 2 3 ${B23}
+pair_coeff      * * sigmoid/episig B 2 3 0.25
+pair_coeff      * * sigmoid/episig B 3 3 ${B33}
+pair_coeff      * * sigmoid/episig B 3 3 0.25
+
+pair_modify     shift yes                           # required both for WCA core and contact attraction.
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Groups and confinement.
+
+group       for_freeze type 2
+4 atoms in group for_freeze
+group       rest subtract all for_freeze
+4877 atoms in group rest
+
+region		Cyl cylinder z 0 0 28 -1 69 side in
+fix		    nucleus all wall/region Cyl lj126 0.15 1.0 2.5
+
+# to include wall energy in total energy (needed to check energy conservation correctly):
+fix_modify  nucleus energy yes
+
+fix         freeze for_freeze setforce 0.0 0.0 0.0
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Observables.
+
+# components of Phi matrix (six for three sig/ten for four sig) and number of contacts N_c.
+compute     episig all pair sigmoid/episig
+variable    N_c equal c_episig[7]               # for three signals.
+
+# linearity check: must be ca. 0 at every step.
+variable    linres equal c_episig+${C}*c_episig[7]+${B11}*c_episig[1]+${B12}*c_episig[2]+${B13}*c_episig[3]+${B22}*c_episig[4]+${B23}*c_episig[5]+${B33}*c_episig[6]
+variable    linres equal c_episig+0.1*c_episig[7]+${B11}*c_episig[1]+${B12}*c_episig[2]+${B13}*c_episig[3]+${B22}*c_episig[4]+${B23}*c_episig[5]+${B33}*c_episig[6]
+variable    linres equal c_episig+0.1*c_episig[7]+0.25*c_episig[1]+${B12}*c_episig[2]+${B13}*c_episig[3]+${B22}*c_episig[4]+${B23}*c_episig[5]+${B33}*c_episig[6]
+variable    linres equal c_episig+0.1*c_episig[7]+0.25*c_episig[1]+0.25*c_episig[2]+${B13}*c_episig[3]+${B22}*c_episig[4]+${B23}*c_episig[5]+${B33}*c_episig[6]
+variable    linres equal c_episig+0.1*c_episig[7]+0.25*c_episig[1]+0.25*c_episig[2]+0.25*c_episig[3]+${B22}*c_episig[4]+${B23}*c_episig[5]+${B33}*c_episig[6]
+variable    linres equal c_episig+0.1*c_episig[7]+0.25*c_episig[1]+0.25*c_episig[2]+0.25*c_episig[3]+0.25*c_episig[4]+${B23}*c_episig[5]+${B33}*c_episig[6]
+variable    linres equal c_episig+0.1*c_episig[7]+0.25*c_episig[1]+0.25*c_episig[2]+0.25*c_episig[3]+0.25*c_episig[4]+0.25*c_episig[5]+${B33}*c_episig[6]
+variable    linres equal c_episig+0.1*c_episig[7]+0.25*c_episig[1]+0.25*c_episig[2]+0.25*c_episig[3]+0.25*c_episig[4]+0.25*c_episig[5]+0.25*c_episig[6]
+
+# printing raw Phi entries and N_c at every thermo step - python check and optimization.
+fix         epi_out all ave/time ${thermo_every} 1 ${thermo_every} c_episig c_episig[*] file ${prefix}_phi.dat format " %.15g"
+fix         epi_out all ave/time 100 1 ${thermo_every} c_episig c_episig[*] file ${prefix}_phi.dat format " %.15g"
+fix         epi_out all ave/time 100 1 100 c_episig c_episig[*] file ${prefix}_phi.dat format " %.15g"
+fix         epi_out all ave/time 100 1 100 c_episig c_episig[*] file T_rational_phi.dat format " %.15g"
+
+# computing useful quantities.
+compute     rg all gyration
+compute     coord all coord/atom cutoff ${r_c}
+compute     coord all coord/atom cutoff 1.78
+compute     coord_avg all reduce ave c_coord
+
+thermo          ${thermo_every}
+thermo          100
+thermo_style    custom step temp press pe ke etotal ebond evdwl c_episig v_N_c v_linres c_rg c_coord_avg
+thermo_modify   flush yes
+thermo_modify   format float " %.15g"
+#-------------------------------------------------------------------------------------------
+
+
+
+
+#-------------------------------------------------------------------------------------------
+# Stage 0: evaluation.
+
+run     0
+WARNING: No fixes with time integration, atoms won't move
+For more information see https://docs.lammps.org/err0028 (src/verlet.cpp:60)
+Generated 0 of 1 mixed pair_coeff terms from geometric mixing rule
+Neighbor list info ...
+  update: every = 1 steps, delay = 0 steps, check = yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 2.8
+  ghost atom cutoff = 3.5
+  binsize = 1.4, bins = 43 43 52
+  3 neighbor lists, perpetual/occasional/extra = 2 1 0
+  (1) pair lj/cut, perpetual
+      attributes: half, newton on
+      pair build: half/bin/newton
+      stencil: half/bin/3d
+      bin: standard
+  (2) pair sigmoid/episig, perpetual
+      attributes: half, newton on, cut 2.8
+      pair build: half/bin/newton
+      stencil: half/bin/3d
+      bin: standard
+  (3) compute coord/atom, occasional
+      attributes: full, newton on
+      pair build: full/bin
+      stencil: full/bin/3d
+      bin: standard
+Per MPI rank memory allocation (min/avg/max) = 7.283 | 7.283 | 7.283 Mbytes
+   Step          Temp          Press          PotEng         KinEng         TotEng         E_bond         E_vdwl        c_episig        v_N_c         v_linres         c_rg       c_coord_avg  
+         0   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+Loop time of 9.51e-07 on 1 procs for 0 steps with 4881 atoms
+
+210.3% CPU use with 1 MPI tasks x 1 OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 0          | 0          | 0          |   0.0 |  0.00
+Bond    | 0          | 0          | 0          |   0.0 |  0.00
+Neigh   | 0          | 0          | 0          |   0.0 |  0.00
+Comm    | 0          | 0          | 0          |   0.0 |  0.00
+Output  | 0          | 0          | 0          |   0.0 |  0.00
+Modify  | 0          | 0          | 0          |   0.0 |  0.00
+Other   |            | 9.51e-07   |            |       |100.00
+
+Nlocal:           4881 ave        4881 max        4881 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Nghost:              0 ave           0 max           0 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Neighs:          94537 ave       94537 max       94537 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+FullNghs:       189074 ave      189074 max      189074 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+
+Total # of neighbors = 189074
+Ave neighs/atom = 38.736734
+Ave special neighs/atom = 5.9975415
+Neighbor list builds = 0
+Dangerous builds = 0
+run 2000          # no time integration: atoms stay fixed, only the forces are recomputed
+WARNING: No fixes with time integration, atoms won't move
+For more information see https://docs.lammps.org/err0028 (src/verlet.cpp:60)
+Generated 0 of 1 mixed pair_coeff terms from geometric mixing rule
+Per MPI rank memory allocation (min/avg/max) = 7.792 | 7.792 | 7.792 Mbytes
+   Step          Temp          Press          PotEng         KinEng         TotEng         E_bond         E_vdwl        c_episig        v_N_c         v_linres         c_rg       c_coord_avg  
+         0   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+       100   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+       200   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+       300   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+       400   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+       500   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+       600   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+       700   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+       800   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+       900   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+      1000   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+      1100   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+      1200   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+      1300   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+      1400   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+      1500   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+      1600   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+      1700   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+      1800   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+      1900   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+      2000   0  0.692894362836371  6.47200538328582  0  6.47200538328582  6.41903665984674e-12  6.4743890417806  -2.21261617008687  23313.5481434867  3.1093350116862e-11  23.4090994973766  9.01577545584921
+Loop time of 2.93271 on 1 procs for 2000 steps with 4881 atoms
+
+Performance: 294608.493 tau/day, 681.964 timesteps/s, 3.329 Matom-step/s
+99.9% CPU use with 1 MPI tasks x 1 OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 2.7295     | 2.7295     | 2.7295     |   0.0 | 93.07
+Bond    | 0.058203   | 0.058203   | 0.058203   |   0.0 |  1.98
+Neigh   | 0          | 0          | 0          |   0.0 |  0.00
+Comm    | 0.00020765 | 0.00020765 | 0.00020765 |   0.0 |  0.01
+Output  | 0.020441   | 0.020441   | 0.020441   |   0.0 |  0.70
+Modify  | 0.10669    | 0.10669    | 0.10669    |   0.0 |  3.64
+Other   |            | 0.01761    |            |       |  0.60
+
+Nlocal:           4881 ave        4881 max        4881 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Nghost:              0 ave           0 max           0 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Neighs:          94537 ave       94537 max       94537 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+FullNghs:       189074 ave      189074 max      189074 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+
+Total # of neighbors = 189074
+Ave neighs/atom = 38.736734
+Ave special neighs/atom = 5.9975415
+Neighbor list builds = 0
+Dangerous builds = 0
+quit 0
