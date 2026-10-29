@@ -26,7 +26,7 @@ def main():
     parser.add_argument("--glen", type=int, default=13256, help="Genome length. Default: 13256.")
     parser.add_argument("--cut", type=float, default=1.5, help="Pairwise distance limit for contact.")
     parser.add_argument("--out", type=str, default="contact_map", help="Output filename (w/out extension).")
-    parser.add_argument("--single", type=bool, default=True, help="True if aploid. False if diploid")
+    parser.add_argument("--single", type=bool, default=True, help="True if haploid. False if diploid")
 
     args = parser.parse_args()
     #---------------------------------------------------------------
