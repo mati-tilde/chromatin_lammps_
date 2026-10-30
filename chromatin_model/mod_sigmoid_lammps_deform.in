@@ -1,0 +1,212 @@
+#===========================================================================================
+# Input file for LAMMPS simulations with sigmoid/episig. 
+#
+# Sigmoid model: 
+# chromatin polymer; WCA core + signal-weighted sigmoid contact attraction.
+#
+#-------------------------------------------------------------------------------------------
+# READ ME: 
+# every "index" variable below can be overwritten from command line with:
+#       "lmp -in mod_sigmoid_lammps.in -var $ID$ $new_value$ ..."
+# for the omp version of the pair_styles:
+#       "lmp -sf omp -pk omp $num$ -in mod_sigmoid_lammps.in ..."
+# log name is set from variable ${prefix}.
+#-------------------------------------------------------------------------------------------
+#
+#-------------------------------------------------------------------------------------------
+# Sections of the file: 
+# Parameters; System; Interactions; Groups and confinement; Observables.
+#
+# Stages: 
+# 0: evaluation; 1: minimization; 1b: confinement compression (R0 -> R1);
+# 2: Langevin equilibration; 3: production.
+#-------------------------------------------------------------------------------------------
+#===========================================================================================
+
+
+
+
+#-------------------------------------------------------------------------------------------
+# Parameters.
+
+# files.
+variable data   index chr2_1.data  
+variable prefix index sigmoid_test
+
+# interaction.
+variable eps_w  index 1             # WCA core strength; = 1 for Kremer-Grest.
+variable C      index 0.0               # baseline contact energy.
+variable r_c    index 1.5              # contact radius: sigmoid half-way (sigma).
+variable mu     index 4              # sigmoid steepness (1/sigma).
+variable r_cut  index 3.0               # sigmoid cutoff (sgima).
+variable b      index 0.1              # default value for every B entry (if B uniform).
+variable B11    index ${b}              # also allowing every entry to be different.
+variable B12    index ${b}        
+variable B13    index ${b}
+variable B22    index ${b}
+variable B23    index ${b}
+variable B33    index ${b}
+
+# langevin dynamics.
+variable damp   index 1.0               # damping parameter for langevin dynamics.
+variable n_eq   index 50000             # langevin equilibration steps.
+variable l_seed index 13
+
+# run control.
+variable skin   index 0.3               # skin distance for neighbor command.
+variable T      index 1.0
+variable dt     index 0.01
+variable n_min  index 1000              # cg iterations (if = 0, no minimization).
+variable n_run  index 200000
+variable thermo_every   index 1000
+variable dump_every index 1000
+variable run0only   index no            # "yes" = stop after initial evaluation (run 0).
+
+# confinement.
+variable R0     index 28.0              # initial cylinder radius (sigma).
+variable R1     index 17.0              # final cylinder radius (sigma).
+variable n_comp index 100000            # compression steps, linear ramp R0 -> R1.
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# System. 
+
+log             ${prefix}.log
+units           lj
+boundary        f f f
+atom_style      bond
+
+fix             signals all property/atom d2_signals 3 ghost yes
+read_data       ${data} fix signals NULL Signals
+
+neighbor        ${skin} bin
+neigh_modify    delay 0 every 1 check yes
+comm_modify     cutoff 3.5
+
+bond_style  harmonic
+bond_coeff 1 40.0 1.0                   # for a spring constant of k' = 2k = 80
+special_bonds lj 0.0 0.5 0.5
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Interactions.
+
+pair_style hybrid/overlay lj/cut 1.122462 sigmoid/episig 3 ${r_cut} form rational     # allow usage of different pair_styles.
+pair_coeff * * lj/cut ${eps_w} 1.0 1.122462         # WCA core: LJ cut at r_min = 2^(1/6).
+pair_coeff * * sigmoid/episig ${C} ${r_c} ${mu}     
+
+pair_coeff      * * sigmoid/episig B 1 1 ${B11}     # introducing B entries: only the second pair_style uses them.
+pair_coeff      * * sigmoid/episig B 1 2 ${B12}
+pair_coeff      * * sigmoid/episig B 1 3 ${B13}
+pair_coeff      * * sigmoid/episig B 2 2 ${B22}
+pair_coeff      * * sigmoid/episig B 2 3 ${B23}
+pair_coeff      * * sigmoid/episig B 3 3 ${B33}
+
+pair_modify   pair lj/cut         special lj 0.0 1.0 1.0  # WCA on 1-3, 1-4
+pair_modify   pair sigmoid/episig special lj 0.0 0.0 0.0  # no sigmoid on |i-j| <= 3
+pair_modify   shift yes
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Groups and confinement.
+
+group       for_freeze type 2
+group       rest subtract all for_freeze
+
+variable    rad equal ${R0}             # current radius; redefined in stage 1b.
+region		Cyl cylinder z 0 0 v_rad -1 69 side in   # dynamic region: radius follows v_rad.
+fix		    nucleus all wall/region Cyl lj126 0.15 1.0 2.5
+
+fix         freeze for_freeze setforce 0.0 0.0 0.0
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Observables.
+
+# components of Phi matrix (six for three sig/ten for four sig) and number of contacts N_c.
+compute     episig all pair sigmoid/episig
+variable    N_c equal c_episig[7]               # for three signals.
+
+# linearity check: must be ca. 0 at every step.
+variable    linres equal c_episig+${C}*c_episig[7]+${B11}*c_episig[1]+${B12}*c_episig[2]+${B13}*c_episig[3]+${B22}*c_episig[4]+${B23}*c_episig[5]+${B33}*c_episig[6]
+
+# printing raw Phi entries and N_c at every thermo step - python check and optimization.
+fix         epi_out all ave/time ${thermo_every} 1 ${thermo_every} c_episig c_episig[*] file ${prefix}_phi.dat format " %.15g"
+
+# computing useful quantities.
+compute     rg all gyration
+compute     coord all coord/atom cutoff ${r_c}
+compute     coord_avg all reduce ave c_coord
+
+# confinement: largest radial distance from the cylinder axis.
+variable    rxy atom sqrt(x*x+y*y)
+compute     rmax all reduce max v_rxy
+
+thermo          ${thermo_every}
+thermo_style    custom step temp evdwl v_N_c c_rg v_rad f_nucleus c_rmax
+thermo_modify   flush yes
+thermo_modify   format float " %.6g"
+#-------------------------------------------------------------------------------------------
+
+
+
+
+#-------------------------------------------------------------------------------------------
+# Stage 0: evaluation.
+
+run     0
+if "${run0only} == yes" then "quit 0"
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Stage 1: minimization.
+
+if "${n_min} > 0" then "min_style cg" "minimize 0 1.0e-6 ${n_min} $(10*v_n_min)"
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Stage 1b: confinement compression.
+# The cylinder radius shrinks linearly from R0 to R1 over n_comp steps.
+# Then, v_rad is redefined as the constant R1, so later runs keep the final radius.
+
+timestep        ${dt}
+fix             integrate rest nve
+fix             thermostat rest langevin ${T} ${T} ${damp} ${l_seed}
+
+if "${n_comp} > 0" then &
+  "variable rad equal ramp(${R0},${R1})" &
+  "run ${n_comp}" &
+  "variable rad equal ${R1}"
+#-------------------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------------------
+# Stage 2: Langevin equilibration.
+
+run             ${n_eq}
+
+write_restart   ${prefix}_equi.restart
+#-------------------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------------------------
+# Stage 3: production.
+
+dump            traj all custom ${dump_every} ${prefix}.lammpstrj id mol type x y z
+dump_modify     traj sort id
+
+# radial distribution function, g(r): how likely it is to find another bead at distance r from a given bead,
+# compared with a completely uniform arrangement at the same average density.
+compute         rdf all rdf 125 cutoff 2.5
+fix             rdf_out all ave/time $(v_thermo_every) 1 $(v_thermo_every) c_rdf[*] file ${prefix}.rdf mode vector ave running
+
+run             ${n_run}
+
+write_restart   ${prefix}.restart
+#-------------------------------------------------------------------------------------------
