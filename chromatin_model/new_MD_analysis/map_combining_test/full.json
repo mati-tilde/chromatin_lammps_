@@ -1,0 +1,28 @@
+{
+  "data": "02Nov_chr2_rw_seed42_without_H3K27ac.data",
+  "traj": "H2_test.lammpstrj",
+  "steps": [
+    3000,
+    4000,
+    5000,
+    6000,
+    7000,
+    8000,
+    9000,
+    10000,
+    11000,
+    12000,
+    13000
+  ],
+  "form": "exp",
+  "r_c": 1.78,
+  "mu": 3.22,
+  "r_cut": 2.5,
+  "d0": 4,
+  "shift": true,
+  "n_atoms": 4881,
+  "topology": "acdad6ca15c9ee32",
+  "normalization": "sum over frames; probability = W / n_frames",
+  "storage": "upper triangle, atom index = id - 1",
+  "n_frames": 11
+}

@@ -1,0 +1,38 @@
+{
+  "form": "exp",
+  "r_c": 1.78,
+  "mu": 3.22,
+  "r_cut": 2.5,
+  "d0": 4,
+  "shift": true,
+  "n_atoms": 4881,
+  "topology": "acdad6ca15c9ee32",
+  "sources": [
+    {
+      "map": "map_combining_test/rep1",
+      "traj": "H2_test.lammpstrj",
+      "data": "02Nov_chr2_rw_seed42_without_H3K27ac.data",
+      "n_frames": 5
+    },
+    {
+      "map": "map_combining_test/rep2",
+      "traj": "H2_test.lammpstrj",
+      "data": "02Nov_chr2_rw_seed42_without_H3K27ac.data",
+      "n_frames": 6
+    }
+  ],
+  "normalization": "sum over all frames of all sources; probability = W / n_frames",
+  "storage": "upper triangle, atom index = id - 1",
+  "n_frames": 11,
+  "n_bins": 4881,
+  "copies_per_chromosome": {
+    "chr2": 1
+  },
+  "classes": {
+    "cis": 855353.906606199,
+    "homolog": 0.0,
+    "inter": 0.0
+  },
+  "probability": "cis: W / (n_frames * copies); homolog, inter: W / n_frames",
+  "storage_binned": "upper triangle on genomic bins (index as in _bins.tsv)"
+}
