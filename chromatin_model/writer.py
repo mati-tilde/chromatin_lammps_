@@ -8,7 +8,7 @@ from pathlib import Path
 
 from genome_parser import read_bed
 from constrained_builder import split_by_arms, build_chroms, build_genome, build_single_chrom
-from writer_funcs import write_data
+from writer_funcs import write_data, write_bin_table
 from signal_annotator import annotate_genome
 from epigenetic_track import EpigeneticTrack
 
@@ -263,3 +263,7 @@ print(f"[writer] writing {filename} and {topology_filename}", flush = True)
 write_data(filename = filename, genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES, signal_names = SIGNAL_NAMES, include_signals = True)
 
 write_data(filename = topology_filename, genome = genome, beads = beads, n_atom_types = N_ATOM_TYPES, n_bond_types = N_BOND_TYPES, signal_names = SIGNAL_NAMES, include_signals = False)
+
+# Writing bin table with a header recording the data file name, the geometry, the chromosomes and the seed:
+bins_filename = str(Path(filename).with_suffix("")) + "_bins.tsv"
+write_bin_table(filename = bins_filename, genome = genome, beads = beads, comments = [...])

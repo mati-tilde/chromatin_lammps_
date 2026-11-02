@@ -132,6 +132,21 @@ def get_beads_for_chrom(beads, chromosome):
 
 
 #--------------------------------------------------------------------------
+# True if the bead at position bead_index is a chromosome end or an arm-junction bead (type 2, frozen).
+# Shared by write_atoms and write_bin_table, so that both use exactly the same rule.
+def is_frozen(chrom_beads, bead_index):
+
+    if bead_index == 0 or bead_index == len(chrom_beads) - 1:
+        return True
+
+    bead = chrom_beads[bead_index]
+
+    return bead.arm != chrom_beads[bead_index - 1].arm or bead.arm != chrom_beads[bead_index + 1].arm
+#--------------------------------------------------------------------------
+
+
+
+#--------------------------------------------------------------------------
 # Writing the atoms section in lammps with for_freeze atoms.
 def write_atoms(genome, beads):
 
@@ -171,21 +186,10 @@ def write_atoms(genome, beads):
 
             x, y, z = coord
 
-            if bead_index == 0 or bead_index == len(chrom_beads) - 1:
+            if is_frozen(chrom_beads, bead_index):
                 atom_type = for_freeze
                 frozen_beads += 1
                 frozen_ids.append(bead_index)
-
-            elif bead.arm != chrom_beads[bead_index - 1].arm:
-                atom_type = for_freeze
-                frozen_beads += 1
-                frozen_ids.append(bead_index)
-
-            elif bead.arm != chrom_beads[bead_index + 1].arm:
-                atom_type = for_freeze
-                frozen_beads += 1
-                frozen_ids.append(bead_index)
-
             else:
                 atom_type = bead_type
 
@@ -384,6 +388,45 @@ def write_data(filename, genome, beads, n_atom_types, n_bond_types, signal_names
 
 
 
+#--------------------------------------------------------------------------
+# Writing the bead -> genomic bin table (one row per LAMMPS atom).
+# Loops over genome and beads exactly as write_atoms does, so atom_id and mol_id match the .data file.
+# input: 1) filename: output .tsv file;
+#        2) genome, beads: as for write_data;
+#        3) comments: list of strings written as "# ..." header lines (provenance).
+def write_bin_table(filename, genome, beads, comments = ()):
+
+    lines = [f"# {c}" for c in comments]
+    lines.append("atom_id\tmol_id\tcopy\tchromosome\tarm\tbin\tstart\tend\tin_bed\tcompartment\tfrozen")
+
+    atom_id = 1
+    molecule_id = 1
+
+    for chromosome, coords in genome.items():
+
+        base_chrom = get_base_chromosome(chromosome)
+        chrom_beads = get_beads_for_chrom(beads, base_chrom)
+
+        # sanity check (same as write_atoms):
+        if len(coords) != len(chrom_beads):
+            raise RuntimeError(f"{chromosome}: {len(coords)} coordinates but {len(chrom_beads)} beads.")
+
+        for bead_index, bead in enumerate(chrom_beads):
+
+            lines.append(
+                f"{atom_id}\t{molecule_id}\t{chromosome}\t{base_chrom}\t{bead.arm}\t{bead.bin_id}\t"
+                f"{bead.start}\t{bead.end}\t{int(bead.in_bed)}\t{bead.compartment}\t{int(is_frozen(chrom_beads, bead_index))}"
+            )
+
+            atom_id += 1
+
+        molecule_id += 1
+
+    with open(filename, "w") as file:
+        file.write("\n".join(lines) + "\n")
+
+    print(f"File: {filename} written successfully.")
+#--------------------------------------------------------------------------
 
 
 

@@ -33,3 +33,8 @@ class Bead:
     x: float | None = None
     y: float | None = None
     z: float | None = None
+
+    # genomic bookkeeping (for the bead -> Hi-C bin table):
+    bin_id: int = -1                # 0-based bin index within the arm
+    in_bed: bool = False            # True if the bin is listed in the .bed file, False if it was filled in
+    compartment: str = "NA"         # 4th column of the .bed file (compartment score), "NA" if absent

@@ -52,10 +52,9 @@ def read_bed(filename):
             # assign a bin_id to each line of info in the file (zero based indexing):
             bin_id = start // RESOLUTION
 
-            # .bed file lookup:
-            bed_lookup[(arm, bin_id)] = {"start" : start, "end" : end}
-
-    print(f"Experimental bins found: {len(bed_lookup)}.")
+            # compartment score (4th column), kept as text ("NA" if missing):
+            compartment = columns[3] if len(columns) > 3 else "NA"
+            bed_lookup[(arm, bin_id)] = {"start" : start, "end" : end, "compartment" : compartment}
 
 
     # Phase 2: creating the beads with correct genome length.
@@ -76,9 +75,13 @@ def read_bed(filename):
             if key in bed_lookup:
                 start = bed_lookup[key]["start"]
                 end = bed_lookup[key]["end"]
+                compartment = bed_lookup[key]["compartment"]
+                in_bed = True
             else:
                 start = bin_id * RESOLUTION + 1
                 end = (bin_id + 1) * RESOLUTION
+                compartment = "NA"
+                in_bed = False
 
             # creating the bead:
             bead = Bead(
@@ -88,6 +91,9 @@ def read_bed(filename):
                 arm_id = arm_id,
                 start = start,
                 end = end,
+                bin_id = bin_id,
+                in_bed = in_bed,
+                compartment = compartment
             )
 
             beads.append(bead)
