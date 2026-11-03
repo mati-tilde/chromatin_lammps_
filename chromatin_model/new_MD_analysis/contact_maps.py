@@ -4,7 +4,8 @@
 # A contact between beads i and j is weighted with the SAME function g(r) used in the energy by pair sigmoid/episig:
 #     g(r) = f(r) - f(r_cut) for r < r_cut (pair_modify shift yes), 0 otherwise,
 #     f(r) = 1 / (1 + exp(-2 mu (r_c - r)))       form "exp" or "tanh" (the same function),
-#     f(r) = 1 / (1 + (r / r_c)^(2n))             form "rational" (n given in the mu slot, as in the pair style).
+#     f(r) = 1 / (1 + (r / r_c)^(2n))             form "rational" (n given in the mu slot, as in the pair style),
+#     f(r) = theta(r_c - r)                       form "step" (hard cutoff at r_c; NOT the energy's function).
 # Pairs closer than d0 along the same chain are excluded (d0 = 4 <-> |i-j| <= 3 excluded, as with
 # "pair_modify pair sigmoid/episig special lj 0 0 0").
 #
@@ -32,6 +33,9 @@ def switch_f(r, form="exp", r_c=1.78, mu=3.22):
 
     if form in ("exp", "tanh"):
         return 1.0 / (1.0 + np.exp(-2.0 * mu * (r_c - r)))
+
+    if form == "step":                          # hard contact: 1 if r < r_c, else 0 (mu not used)
+        return (r < r_c).astype(float) 
 
     if form == "rational":
         n = int(round(mu))

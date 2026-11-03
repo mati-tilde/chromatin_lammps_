@@ -16,7 +16,7 @@ p.add_argument("--data", required=True, help="LAMMPS data file used for the run 
 p.add_argument("--traj", required=True, help="LAMMPS text dump with id and x y z columns.")
 p.add_argument("--phi", help="<prefix>_phi.dat of the same run: enables the exact check (H4).")
 p.add_argument("--out", default="contact_map", help="Output name (writes <out>.npz and <out>.json).")
-p.add_argument("--form", default="exp", choices=["exp", "tanh", "rational"])
+p.add_argument("--form", default="exp", choices=["exp", "tanh", "rational", "step"], help="Contact function. 'step' = hard cutoff at r_c (not the energy's function: no check against LAMMPS).")
 p.add_argument("--r_c", type=float, default=1.78)
 p.add_argument("--mu", type=float, default=3.22)
 p.add_argument("--r_cut", type=float, default=2.5)
@@ -30,6 +30,11 @@ a = p.parse_args()
 
 ids, mol, typ, xyz, sig = cm.read_data(a.data)
 weight = dict(form=a.form, r_c=a.r_c, mu=a.mu)
+if a.form == "step" and a.phi:
+    print("Note: with --form step the map is not the energy's statistic; the check against LAMMPS is skipped.")
+    a.phi = None
+if a.form == "step" and a.r_cut < a.r_c:
+    raise SystemExit("--form step needs --r_cut >= --r_c (pairs are searched within r_cut).")
 check = cm.read_phi(a.phi) if a.phi else None
 if check is not None and sig is None:
     raise SystemExit("The check needs the signals: use the data file with the Signals section.")
