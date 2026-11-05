@@ -266,4 +266,4 @@ write_data(filename = topology_filename, genome = genome, beads = beads, n_atom_
 
 # Writing bin table with a header recording the data file name, the geometry, the chromosomes and the seed:
 bins_filename = str(Path(filename).with_suffix("")) + "_bins.tsv"
-write_bin_table(filename = bins_filename, genome = genome, beads = beads, comments = [...])
+write_bin_table(filename = bins_filename, genome = genome, beads = beads, comments = [f"Data file: {filename}", f"Geometry: {GEOMETRY}", f"Chromosomes: {CHROMOSOMES}", f"Seed: {SEED}"])

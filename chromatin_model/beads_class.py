@@ -21,7 +21,6 @@ class Bead:
 
     arm_id: int
 
-
     start: int
 
     end: int

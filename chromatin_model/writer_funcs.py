@@ -141,8 +141,10 @@ def is_frozen(chrom_beads, bead_index):
 
     bead = chrom_beads[bead_index]
 
+    # also True if the current bead's arm differs from at least one of its two neighboring beads' arms
     return bead.arm != chrom_beads[bead_index - 1].arm or bead.arm != chrom_beads[bead_index + 1].arm
 #--------------------------------------------------------------------------
+
 
 
 
@@ -396,6 +398,7 @@ def write_data(filename, genome, beads, n_atom_types, n_bond_types, signal_names
 #        3) comments: list of strings written as "# ..." header lines (provenance).
 def write_bin_table(filename, genome, beads, comments = ()):
 
+    # initializing the lines of a TSV file: first comments, then header line, then data lines.
     lines = [f"# {c}" for c in comments]
     lines.append("atom_id\tmol_id\tcopy\tchromosome\tarm\tbin\tstart\tend\tin_bed\tcompartment\tfrozen")
 
